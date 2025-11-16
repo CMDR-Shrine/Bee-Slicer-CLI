@@ -210,6 +210,12 @@ else:
 
 print("      Using SD filename: {}".format(sd_filename))
 
+# Home the printer before starting print
+print("      Homing printer axes...")
+cmd.home()
+time.sleep(2)
+print("      Homing complete")
+
 # Start print using M33 command (send directly with newline)
 print("      Sending M33 command...")
 response = cmd.sendCmd('M33 {}\n'.format(sd_filename))
