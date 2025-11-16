@@ -38,7 +38,7 @@ print("File: {}".format(os.path.basename(gcode_file)))
 print("="*60)
 
 # Step 1: Connect
-print("\n[3/9] Connecting to printer...")
+print("\n[1/5] Connecting to printer...")
 c = conn.Conn()
 printers = c.getPrinterList()
 
@@ -65,7 +65,7 @@ print("      Connected to: {}".format(printers[0].get('Product', 'Unknown')))
 print("      Serial: {}".format(printers[0].get('Serial Number', 'Unknown')))
 
 # Step 2: Firmware mode
-print("\n[4/9] Ensuring firmware mode...")
+print("\n[2/5] Ensuring firmware mode...")
 mode = cmd.getPrinterMode()
 if mode != "Firmware":
     print("      Switching to firmware...")
@@ -74,7 +74,7 @@ if mode != "Firmware":
 print("      In firmware mode!")
 
 # Step 3: Get target temperature from G-code
-print("\n[5/9] Reading G-code for temperature...")
+print("\n[3/5] Reading G-code for temperature...")
 target_temp = 200  # default
 with open(gcode_file, 'r') as f:
     for line in f:
@@ -89,82 +89,55 @@ with open(gcode_file, 'r') as f:
                 except:
                     pass
 
-# Step 4: Start heating
-heat_temp = target_temp
-print("\n[6/9] Starting heating to {}C...".format(heat_temp))
-response = cmd.sendCmd("M104 S{}\n".format(heat_temp))
-print("      M104 response: {}".format(response.strip()))
-print("      Waiting for temperature...")
+# Step 4: Start print (handles heating, transfer, and M33 automatically)
+print("\n[4/5] Starting print job...")
+print("      Target temperature: {}C (+5C for heating)".format(target_temp))
+print("      File: {}".format(os.path.basename(gcode_file)))
 
-# Wait for temperature
-current_temp = 0
-for i in range(300):  # 5 minutes max
-    time.sleep(1)
-    current_temp = cmd.getNozzleTemperature()
-    if i % 5 == 0:  # Print every 5 seconds
-        print("      Current: {:.1f}C / Target: {}C".format(current_temp, heat_temp))
+result = cmd.printFile(
+    filePath=gcode_file,
+    printTemperature=target_temp,
+    sdFileName=os.path.basename(gcode_file)
+)
 
-    if current_temp >= heat_temp:  # Reached target
-        print("      Temperature reached: {:.1f}C!".format(current_temp))
-        break
+if not result:
+    print("ERROR: Failed to start print!")
+    c.close()
+    sys.exit(1)
 
-if current_temp < heat_temp:
-    print("      WARNING: Only reached {:.1f}C after timeout, continuing anyway...".format(current_temp))
+print("      Print job started successfully!")
 
-# Step 5: Transfer file
-print("\n[7/9] Transferring file...")
-basename = os.path.basename(gcode_file)
-# Create SD-card safe filename (max 8 chars, no special chars, can't start with digit)
-sd_name = basename[:8].replace('.', '').replace(' ', '').replace('-', '').replace('_', '')
-if not sd_name:
-    sd_name = "PRINT"
-elif sd_name[0].isdigit():
-    sd_name = 'P' + sd_name[1:8]
+# Step 5: Monitor transfer and heating progress
+print("\n[5/5] Monitoring print progress...")
+print("      Waiting for file transfer and heating...")
 
-print("      SD name: {}".format(sd_name))
+last_transfer_progress = -1
+last_temp = -1
 
-cmd.transferSDFile(fileName=gcode_file, sdFileName=sd_name)
+while cmd.isTransferring() or cmd.isHeating():
+    time.sleep(2)
 
-# Wait for transfer
-print("      Waiting for transfer to complete...")
-max_wait = 300
-elapsed = 0
-while elapsed < max_wait:
+    # Show transfer progress
     if cmd.isTransferring():
-        time.sleep(2)
-        elapsed += 2
-        if elapsed % 10 == 0:
-            print("      Still transferring... ({}s)".format(elapsed))
-    else:
-        break
+        progress = cmd.getTransferCompletionState()
+        if progress != last_transfer_progress:
+            print("      Transfer: {}%".format(progress))
+            last_transfer_progress = progress
 
-if cmd.isTransferring():
-    print("      WARNING: Transfer still in progress after timeout!")
-else:
-    print("      Transfer complete!")
-
-# Extra safety: wait a bit more for SD card to finish writing
-print("      Waiting for SD card to be ready...")
-time.sleep(3)
-
-# Step 6: Start print with M33 (BEETHEFIRST-specific print command)
-print("\n[8/9] Starting print with M33 command...")
-print("      SD filename: {}".format(sd_name))
-print("      Sending M33 to start print...")
-response = cmd.sendCmd("M33 {}\n".format(sd_name))
-print("      M33 response: {}".format(response.strip()))
-
-# Give printer time to process M33 command
-time.sleep(2)
+    # Show heating progress
+    if cmd.isHeating():
+        current_temp = cmd.getNozzleTemperature()
+        if abs(current_temp - last_temp) > 2:  # Only print if temp changed by >2C
+            print("      Heating: {:.1f}C / {}C".format(current_temp, target_temp + 5))
+            last_temp = current_temp
 
 print("\n" + "="*60)
-print("[9/9] PRINT STARTED!")
+print("PRINT STARTED!")
 print("="*60)
-print("The G-code file is now executing on the printer.")
-print("Your G-code's M104/M109 commands will heat the nozzle.")
-print("Watch the printer display!")
+print("File transferred and heating complete.")
+print("Printer is now executing the G-code.")
 print("")
-print("Monitoring temperature (Ctrl+C to exit)...")
+print("Monitoring status (Ctrl+C to exit)...")
 print("="*60 + "\n")
 
 # Simple monitoring loop
