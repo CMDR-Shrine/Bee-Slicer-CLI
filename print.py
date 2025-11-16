@@ -127,7 +127,7 @@ while cmd.isTransferring() or cmd.isHeating():
     # Show heating progress
     if cmd.isHeating():
         current_temp = cmd.getNozzleTemperature()
-        if abs(current_temp - last_temp) > 2:  # Only print if temp changed by >2C
+        if current_temp is not None and abs(current_temp - last_temp) > 2:  # Only print if temp changed by >2C
             print("      Heating: {:.1f}C / {}C".format(current_temp, target_temp + 5))
             last_temp = current_temp
 
