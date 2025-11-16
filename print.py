@@ -178,17 +178,37 @@ if sd_filename and sd_filename[0].isdigit():
 
 print("      Expected SD filename: {}".format(sd_filename))
 
-# Verify it exists on SD card
+# Find matching file on SD card
+matched_file = None
 if file_list and 'FileNames' in file_list:
-    # Convert to uppercase for comparison (SD card stores uppercase)
     sd_filename_upper = sd_filename.upper()
+
+    # First try exact match
     if sd_filename_upper in file_list['FileNames']:
-        print("      Confirmed file exists on SD card")
-        sd_filename = sd_filename_upper
+        matched_file = sd_filename_upper
+        print("      Exact match found: {}".format(matched_file))
     else:
-        print("      WARNING: Expected file '{}' not found on SD card!".format(sd_filename_upper))
-        print("      Available files: {}".format(file_list['FileNames']))
-        print("      Attempting to print anyway...")
+        # Try to find a file that starts with our expected name
+        # This handles cases where the SD card truncated the filename further
+        for f in file_list['FileNames']:
+            if f.startswith(sd_filename_upper[:6]):  # Match first 6 chars
+                matched_file = f
+                print("      Partial match found: {} (expected: {})".format(f, sd_filename_upper))
+                break
+
+        if not matched_file:
+            print("      WARNING: No matching file found on SD card!")
+            print("      Expected: {}".format(sd_filename_upper))
+            print("      Available: {}".format(file_list['FileNames']))
+            print("      Using expected name anyway...")
+            matched_file = sd_filename_upper
+
+if matched_file:
+    sd_filename = matched_file
+else:
+    sd_filename = sd_filename.upper()
+
+print("      Using SD filename: {}".format(sd_filename))
 
 # Start print using M33 command
 result = cmd.startSDPrint(sd_filename)
