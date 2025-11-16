@@ -111,6 +111,14 @@ while cmd.isTransferring():
 
 print("      Transfer complete!")
 
+# Check what files are on SD card
+print("      Checking SD card files...")
+file_list = cmd.getFileList()
+if file_list and 'FileNames' in file_list:
+    print("      Files on SD card: {}".format(file_list['FileNames']))
+else:
+    print("      Could not read SD card file list")
+
 # Step 6: Heat nozzle
 print("\n[6/7] Heating nozzle to {}C...".format(target_temp))
 cmd.setNozzleTemperature(target_temp)
@@ -139,15 +147,20 @@ while time.time() - start_time < max_wait:
 # Step 7: Start print
 print("\n[7/7] Starting print...")
 
-# Get SD filename (sanitized)
-sd_filename = basename
-sd_filename = re.sub('[\W_]+', '', sd_filename)  # Remove special chars
-if len(sd_filename) > 8:
-    sd_filename = sd_filename[:8]
-if sd_filename and sd_filename[0].isdigit():
-    sd_filename = 'a' + sd_filename[1:7]
-
-print("      SD filename: {}".format(sd_filename))
+# Use the most recent file from SD card (should be the one we just transferred)
+sd_filename = None
+if file_list and 'FileNames' in file_list and len(file_list['FileNames']) > 0:
+    # Get the last file in the list (most recently added)
+    sd_filename = file_list['FileNames'][-1]
+    print("      Using SD filename from card: {}".format(sd_filename))
+else:
+    # Fallback: sanitize the basename ourselves (match transferThread.py logic)
+    sd_filename = re.sub('[\W_]+', '', basename)  # Remove special chars
+    if len(sd_filename) > 8:
+        sd_filename = sd_filename[:7]  # Truncate to 7 chars like transferThread does
+    if sd_filename and sd_filename[0].isdigit():
+        sd_filename = 'a' + sd_filename[1:7]
+    print("      Using sanitized filename: {}".format(sd_filename))
 
 # Start print using M33 command
 result = cmd.startSDPrint(sd_filename)
@@ -155,12 +168,21 @@ result = cmd.startSDPrint(sd_filename)
 if not result:
     print("      WARNING: M33 command may have failed")
 
-time.sleep(2)
+# Give printer a moment to start
+print("      Waiting for print to start...")
+time.sleep(3)
+
+# Verify print started
+is_printing = cmd.isPrinting()
+if is_printing:
+    print("      Print started successfully!")
+else:
+    print("      WARNING: Printer status shows not printing!")
+    print("      Check printer display for error messages")
 
 print("\n" + "="*60)
-print("PRINT STARTED!")
+print("PRINT STARTED!" if is_printing else "WAITING FOR PRINT...")
 print("="*60)
-print("The printer has received the file and is printing.")
 print("")
 print("Monitoring status (Ctrl+C to exit)...")
 print("="*60 + "\n")
