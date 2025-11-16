@@ -108,34 +108,28 @@ if not result:
 print("      Print job started successfully!")
 
 # Step 5: Monitor transfer and heating progress
-print("\n[5/5] Monitoring print progress...")
-print("      Waiting for file transfer and heating...")
+print("\n[5/5] Monitoring transfer progress...")
 
 last_transfer_progress = -1
-last_temp = -1
 
-while cmd.isTransferring() or cmd.isHeating():
+while cmd.isTransferring():
     time.sleep(2)
+    progress = cmd.getTransferCompletionState()
+    if progress != last_transfer_progress:
+        print("      Transfer: {}%".format(progress))
+        last_transfer_progress = progress
 
-    # Show transfer progress
-    if cmd.isTransferring():
-        progress = cmd.getTransferCompletionState()
-        if progress != last_transfer_progress:
-            print("      Transfer: {}%".format(progress))
-            last_transfer_progress = progress
+print("      Transfer complete!")
+print("      Printer is now heating and will start printing automatically...")
+print("")
 
-    # Show heating progress
-    if cmd.isHeating():
-        current_temp = cmd.getNozzleTemperature()
-        if current_temp is not None and abs(current_temp - last_temp) > 2:  # Only print if temp changed by >2C
-            print("      Heating: {:.1f}C / {}C".format(current_temp, target_temp + 5))
-            last_temp = current_temp
+# Wait a moment for print to actually start
+time.sleep(5)
 
 print("\n" + "="*60)
 print("PRINT STARTED!")
 print("="*60)
-print("File transferred and heating complete.")
-print("Printer is now executing the G-code.")
+print("The printer has received the file and is printing.")
 print("")
 print("Monitoring status (Ctrl+C to exit)...")
 print("="*60 + "\n")
