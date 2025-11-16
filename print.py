@@ -11,6 +11,7 @@ Usage:
 import sys
 import os
 import time
+import re
 
 # Add beedriver to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'beedriver'))
@@ -38,7 +39,7 @@ print("File: {}".format(os.path.basename(gcode_file)))
 print("="*60)
 
 # Step 1: Connect
-print("\n[1/5] Connecting to printer...")
+print("\n[1/7] Connecting to printer...")
 c = conn.Conn()
 printers = c.getPrinterList()
 
@@ -65,7 +66,7 @@ print("      Connected to: {}".format(printers[0].get('Product', 'Unknown')))
 print("      Serial: {}".format(printers[0].get('Serial Number', 'Unknown')))
 
 # Step 2: Firmware mode
-print("\n[2/5] Ensuring firmware mode...")
+print("\n[2/7] Ensuring firmware mode...")
 mode = cmd.getPrinterMode()
 if mode != "Firmware":
     print("      Switching to firmware...")
@@ -74,7 +75,7 @@ if mode != "Firmware":
 print("      In firmware mode!")
 
 # Step 3: Get target temperature from G-code
-print("\n[3/5] Reading G-code for temperature...")
+print("\n[3/7] Reading G-code for temperature...")
 target_temp = 200  # default
 with open(gcode_file, 'r') as f:
     for line in f:
@@ -89,42 +90,72 @@ with open(gcode_file, 'r') as f:
                 except:
                     pass
 
-# Step 4: Start print (handles heating, transfer, and M33 automatically)
-print("\n[4/5] Starting print job...")
-print("      Target temperature: {}C (+5C for heating)".format(target_temp))
-print("      File: {}".format(os.path.basename(gcode_file)))
+# Step 4: Transfer file to SD card
+print("\n[4/7] Transferring file to SD card...")
+basename = os.path.basename(gcode_file)
+print("      File: {}".format(basename))
 
-result = cmd.printFile(
-    filePath=gcode_file,
-    printTemperature=target_temp,
-    sdFileName=os.path.basename(gcode_file)
-)
+cmd.transferSDFile(fileName=gcode_file, sdFileName=basename)
 
-if not result:
-    print("ERROR: Failed to start print!")
-    c.close()
-    sys.exit(1)
-
-print("      Print job started successfully!")
-
-# Step 5: Monitor transfer and heating progress
-print("\n[5/5] Monitoring transfer progress...")
+# Step 5: Monitor transfer progress
+print("\n[5/7] Monitoring transfer...")
 
 last_transfer_progress = -1
 
 while cmd.isTransferring():
     time.sleep(2)
     progress = cmd.getTransferCompletionState()
-    if progress != last_transfer_progress:
+    if progress is not None and progress != last_transfer_progress:
         print("      Transfer: {}%".format(progress))
         last_transfer_progress = progress
 
 print("      Transfer complete!")
-print("      Printer is now heating and will start printing automatically...")
-print("")
 
-# Wait a moment for print to actually start
-time.sleep(5)
+# Step 6: Heat nozzle
+print("\n[6/7] Heating nozzle to {}C...".format(target_temp))
+cmd.setNozzleTemperature(target_temp)
+
+# Wait for temperature with timeout
+max_wait = 300  # 5 minutes
+start_time = time.time()
+last_reported_temp = -999
+
+while time.time() - start_time < max_wait:
+    current_temp = cmd.getNozzleTemperature()
+
+    if current_temp is not None:
+        # Report temperature every 5 degrees change
+        if abs(current_temp - last_reported_temp) >= 5:
+            print("      Current: {:.1f}C / Target: {}C".format(current_temp, target_temp))
+            last_reported_temp = current_temp
+
+        # Check if target reached
+        if current_temp >= target_temp - 2:  # Within 2 degrees
+            print("      Target temperature reached: {:.1f}C!".format(current_temp))
+            break
+
+    time.sleep(2)
+
+# Step 7: Start print
+print("\n[7/7] Starting print...")
+
+# Get SD filename (sanitized)
+sd_filename = basename
+sd_filename = re.sub('[\W_]+', '', sd_filename)  # Remove special chars
+if len(sd_filename) > 8:
+    sd_filename = sd_filename[:8]
+if sd_filename and sd_filename[0].isdigit():
+    sd_filename = 'a' + sd_filename[1:7]
+
+print("      SD filename: {}".format(sd_filename))
+
+# Start print using M33 command
+result = cmd.startSDPrint(sd_filename)
+
+if not result:
+    print("      WARNING: M33 command may have failed")
+
+time.sleep(2)
 
 print("\n" + "="*60)
 print("PRINT STARTED!")
