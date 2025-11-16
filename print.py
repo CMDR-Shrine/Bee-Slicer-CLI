@@ -210,11 +210,10 @@ else:
 
 print("      Using SD filename: {}".format(sd_filename))
 
-# Start print using M33 command
-result = cmd.startSDPrint(sd_filename)
-
-if not result:
-    print("      WARNING: M33 command may have failed")
+# Start print using M33 command (send directly with newline)
+print("      Sending M33 command...")
+response = cmd.sendCmd('M33 {}\n'.format(sd_filename))
+print("      M33 response: '{}'".format(response.strip() if response else 'No response'))
 
 # Give printer a moment to start
 print("      Waiting for print to start...")
