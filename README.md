@@ -7,7 +7,6 @@ Standalone Python script to print G-code files on BEETHEFIRST/BEETHEFIRST+ print
 ## Quick Start
 
 ```bash
-cd standalone-printer
 ./print.sh /path/to/your/print.gcode
 ```
 
@@ -42,7 +41,6 @@ sudo usermod -a -G dialout $USER
 Install udev rules:
 
 ```bash
-cd ..
 sudo cp 99-beeverycreative.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 sudo udevadm trigger
@@ -58,7 +56,7 @@ lsusb | grep BEEVERYCREATIVE
 
 1. **Connects** to your BEETHEFIRST printer via USB
 2. **Reads** the target temperature from your G-code (M104/M109 commands)
-3. **Heats** the nozzle to target temperature + 5°C
+3. **Heats** the nozzle to target temperature
 4. **Transfers** the G-code file to printer's internal SD card
 5. **Starts** the print using M33 command (BEETHEFIRST-specific)
 6. **Monitors** print progress and temperature
