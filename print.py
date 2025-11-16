@@ -72,6 +72,16 @@ if mode != "Firmware":
     print("      Switching to firmware...")
     cmd.goToFirmware()
     time.sleep(2)
+
+# Clear any shutdown flag from previous print
+status = cmd.getStatus()
+if status == 'Shutdown':
+    print("      Printer in Shutdown mode, clearing flag...")
+    cmd.clearShutdownFlag()
+    time.sleep(2)
+    status = cmd.getStatus()
+    print("      New status: {}".format(status))
+
 print("      In firmware mode!")
 
 # Step 3: Get target temperature from G-code
@@ -95,6 +105,14 @@ print("\n[4/7] Transferring file to SD card...")
 basename = os.path.basename(gcode_file)
 print("      File: {}".format(basename))
 
+# Show what the filename will become after sanitization
+sanitized_preview = re.sub('[\W_]+', '', basename)
+if len(sanitized_preview) > 8:
+    sanitized_preview = sanitized_preview[:7]
+if sanitized_preview and sanitized_preview[0].isdigit():
+    sanitized_preview = 'a' + sanitized_preview[1:7]
+print("      Expected SD name: {} (uppercase)".format(sanitized_preview.upper()))
+
 cmd.transferSDFile(fileName=gcode_file, sdFileName=basename)
 
 # Step 5: Monitor transfer progress
@@ -111,11 +129,15 @@ while cmd.isTransferring():
 
 print("      Transfer complete!")
 
+# Wait a moment for SD card to finish writing
+time.sleep(2)
+
 # Check what files are on SD card
 print("      Checking SD card files...")
 file_list = cmd.getFileList()
 if file_list and 'FileNames' in file_list:
     print("      Files on SD card: {}".format(file_list['FileNames']))
+    print("      Total files: {}".format(len(file_list['FileNames'])))
 else:
     print("      Could not read SD card file list")
 
@@ -147,20 +169,26 @@ while time.time() - start_time < max_wait:
 # Step 7: Start print
 print("\n[7/7] Starting print...")
 
-# Use the most recent file from SD card (should be the one we just transferred)
-sd_filename = None
-if file_list and 'FileNames' in file_list and len(file_list['FileNames']) > 0:
-    # Get the last file in the list (most recently added)
-    sd_filename = file_list['FileNames'][-1]
-    print("      Using SD filename from card: {}".format(sd_filename))
-else:
-    # Fallback: sanitize the basename ourselves (match transferThread.py logic)
-    sd_filename = re.sub('[\W_]+', '', basename)  # Remove special chars
-    if len(sd_filename) > 8:
-        sd_filename = sd_filename[:7]  # Truncate to 7 chars like transferThread does
-    if sd_filename and sd_filename[0].isdigit():
-        sd_filename = 'a' + sd_filename[1:7]
-    print("      Using sanitized filename: {}".format(sd_filename))
+# Calculate expected SD filename (match transferThread.py logic exactly)
+sd_filename = re.sub('[\W_]+', '', basename)  # Remove special chars (dots, spaces, etc)
+if len(sd_filename) > 8:
+    sd_filename = sd_filename[:7]  # Truncate to 7 chars like transferThread does
+if sd_filename and sd_filename[0].isdigit():
+    sd_filename = 'a' + sd_filename[1:7]
+
+print("      Expected SD filename: {}".format(sd_filename))
+
+# Verify it exists on SD card
+if file_list and 'FileNames' in file_list:
+    # Convert to uppercase for comparison (SD card stores uppercase)
+    sd_filename_upper = sd_filename.upper()
+    if sd_filename_upper in file_list['FileNames']:
+        print("      Confirmed file exists on SD card")
+        sd_filename = sd_filename_upper
+    else:
+        print("      WARNING: Expected file '{}' not found on SD card!".format(sd_filename_upper))
+        print("      Available files: {}".format(file_list['FileNames']))
+        print("      Attempting to print anyway...")
 
 # Start print using M33 command
 result = cmd.startSDPrint(sd_filename)
@@ -174,10 +202,14 @@ time.sleep(3)
 
 # Verify print started
 is_printing = cmd.isPrinting()
+status = cmd.getStatus()
 if is_printing:
     print("      Print started successfully!")
 else:
     print("      WARNING: Printer status shows not printing!")
+    print("      Printer status: {}".format(status))
+    if status == 'Shutdown':
+        print("      Printer still in Shutdown mode - this is unexpected!")
     print("      Check printer display for error messages")
 
 print("\n" + "="*60)
