@@ -90,7 +90,7 @@ with open(gcode_file, 'r') as f:
                     pass
 
 # Step 4: Start heating
-heat_temp = target_temp + 5  # Heat 5 degrees above target
+heat_temp = target_temp
 print("\n[6/9] Starting heating to {}C...".format(heat_temp))
 response = cmd.sendCmd("M104 S{}\n".format(heat_temp))
 print("      M104 response: {}".format(response.strip()))
