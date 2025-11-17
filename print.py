@@ -7,7 +7,7 @@ No Docker required - uses local Python 2.7 environment
 This script uses a hybrid approach:
 - Manually creates M31 header (like printFile API) for proper metadata
 - Uses M104 for heating (standard Marlin)
-- Uses M23 + M24 to start print (standard Marlin SD commands)
+- Uses M33 to start print (BEETHEFIRST-specific, M23/M24 don't work)
 
 Usage:
     python2 print.py <gcode_file>
@@ -266,17 +266,17 @@ else:
 
 print("      Using SD filename: {}".format(sd_filename))
 
-# Start print using M23 + M24 commands (standard Marlin)
-# M23 = Select SD file, M24 = Start/Resume SD print
-print("      Sending M23 {} (Select SD file)...".format(sd_filename))
-response = cmd.sendCmd('M23 {}\n'.format(sd_filename))
-print("      M23 response: '{}'".format(response.strip() if response else 'No response'))
+# Start print using M33 (BEETHEFIRST-specific command)
+# M23/M24 don't work on this printer - got "error opening file" and "Bad M-code 24"
+print("      Using startSDPrint() API with M33...")
+result = cmd.startSDPrint(sd_filename)
+print("      startSDPrint() result: {}".format(result))
 
+# Also try sending M33 directly to see the response
 time.sleep(1)
-
-print("      Sending M24 (Start SD print)...")
-response = cmd.sendCmd('M24\n')
-print("      M24 response: '{}'".format(response.strip() if response else 'No response'))
+print("      Sending M33 {} directly (for debugging)...".format(sd_filename))
+response = cmd.sendCmd('M33 {}\n'.format(sd_filename))
+print("      M33 response: '{}'".format(response.strip() if response else 'No response'))
 
 # Give printer time to start - check status multiple times over 30 seconds
 print("      Waiting for print to start (checking over 30 seconds)...")
