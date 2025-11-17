@@ -6,8 +6,8 @@ No Docker required - uses local Python 2.7 environment
 
 This script uses a hybrid approach:
 - Manually creates M31 header (like printFile API) for proper metadata
-- Uses M703 heating (stable) instead of M104 (oscillates)
-- Sends M33 directly to start print
+- Uses M104 for heating (standard Marlin)
+- Uses M23 + M24 to start print (standard Marlin SD commands)
 
 Usage:
     python2 print.py <gcode_file>
@@ -122,6 +122,12 @@ estimated_time_seconds = int(gcode_line_count * 0.1)
 estimated_minutes = estimated_time_seconds / 60
 print("      Estimated time: {} minutes (rough)".format(estimated_minutes))
 
+# Sanity check temperature
+if target_temp < 150:
+    print("      WARNING: No heating commands found in G-code!")
+    print("      Using default temperature: 200C")
+    target_temp = 200
+
 # Step 4: Transfer file to SD card WITH M31 header
 print("\n[4/7] Transferring file to SD card with metadata...")
 basename = os.path.basename(gcode_file)
@@ -183,12 +189,11 @@ if file_list and 'FileNames' in file_list:
 else:
     print("      Could not read SD card file list")
 
-# Step 6: Heat nozzle using BEETHEFIRST M703 command
-# Using M703 instead of printFile()'s M104 heating to avoid temperature oscillations
+# Step 6: Heat nozzle using standard M104 command
 print("\n[6/7] Heating nozzle to {}C...".format(target_temp))
-print("      Using M703 heating command (stable, no oscillations)...")
-response = cmd.sendCmd('M703 S{}\n'.format(target_temp))
-print("      M703 response: {}".format(response.strip() if response else 'No response'))
+print("      Sending M104 S{} (Set Hotend Temperature)...".format(target_temp))
+response = cmd.sendCmd('M104 S{}\n'.format(target_temp))
+print("      M104 response: {}".format(response.strip() if response else 'No response'))
 
 # Wait for temperature with timeout
 max_wait = 300  # 5 minutes
@@ -255,11 +260,17 @@ else:
 
 print("      Using SD filename: {}".format(sd_filename))
 
-# Start print using M32 command (Select and Start in one command)
-# M32 is standard Marlin "Select and Start" - M33 is actually "Get Long Path"!
-print("      Sending M32 command (Select and Start)...")
-response = cmd.sendCmd('M32 {}\n'.format(sd_filename))
-print("      M32 response: '{}'".format(response.strip() if response else 'No response'))
+# Start print using M23 + M24 commands (standard Marlin)
+# M23 = Select SD file, M24 = Start/Resume SD print
+print("      Sending M23 {} (Select SD file)...".format(sd_filename))
+response = cmd.sendCmd('M23 {}\n'.format(sd_filename))
+print("      M23 response: '{}'".format(response.strip() if response else 'No response'))
+
+time.sleep(1)
+
+print("      Sending M24 (Start SD print)...")
+response = cmd.sendCmd('M24\n')
+print("      M24 response: '{}'".format(response.strip() if response else 'No response'))
 
 # Give printer a moment to start
 print("      Waiting for print to start...")
