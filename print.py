@@ -4,6 +4,11 @@
 Standalone BEETHEFIRST Printer Script
 No Docker required - uses local Python 2.7 environment
 
+This script uses a hybrid approach:
+- Manually creates M31 header (like printFile API) for proper metadata
+- Uses M703 heating (stable) instead of M104 (oscillates)
+- Sends M33 directly to start print
+
 Usage:
     python2 print.py <gcode_file>
 """
@@ -18,6 +23,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'beedriver'))
 
 try:
     import beedriver.connection as conn
+    import beedriver.transferThread as transferThread
+    import beedriver.commands as BeeCmd
 except ImportError as e:
     print("ERROR: Failed to import beedriver!")
     print("Error: {}".format(e))
@@ -84,24 +91,39 @@ if status == 'Shutdown':
 
 print("      In firmware mode!")
 
-# Step 3: Get target temperature from G-code
-print("\n[3/7] Reading G-code for temperature...")
+# Step 3: Analyze G-code file
+print("\n[3/7] Analyzing G-code file...")
 target_temp = 200  # default
+gcode_line_count = 0
+estimated_time_seconds = 0  # Will be rough estimate
+
 with open(gcode_file, 'r') as f:
     for line in f:
+        line = line.strip()
+        if not line or line.startswith(';'):
+            continue  # Skip empty lines and comments
+
+        gcode_line_count += 1
+
+        # Extract temperature from M104/M109 commands
         if line.startswith('M104') or line.startswith('M109'):
-            # Extract S parameter
             if ' S' in line:
                 try:
                     temp_str = line.split(' S')[1].split()[0].split(';')[0]
                     target_temp = int(float(temp_str))
                     print("      Found temperature: {}C".format(target_temp))
-                    break
                 except:
                     pass
 
-# Step 4: Transfer file to SD card
-print("\n[4/7] Transferring file to SD card...")
+print("      G-code lines: {}".format(gcode_line_count))
+
+# Rough time estimate: ~0.1 seconds per line (very approximate)
+estimated_time_seconds = int(gcode_line_count * 0.1)
+estimated_minutes = estimated_time_seconds / 60
+print("      Estimated time: {} minutes (rough)".format(estimated_minutes))
+
+# Step 4: Transfer file to SD card WITH M31 header
+print("\n[4/7] Transferring file to SD card with metadata...")
 basename = os.path.basename(gcode_file)
 print("      File: {}".format(basename))
 
@@ -113,7 +135,28 @@ if sanitized_preview and sanitized_preview[0].isdigit():
     sanitized_preview = 'a' + sanitized_preview[1:7]
 print("      Expected SD name: {} (uppercase)".format(sanitized_preview.upper()))
 
-cmd.transferSDFile(fileName=gcode_file, sdFileName=basename)
+# Generate M31 header with print metadata (like printFile API does)
+print("      Generating M31 metadata header...")
+m31_header = BeeCmd.BeeCmd.generatePrintInfoHeader(
+    gcode_file,
+    estimated_time_seconds,
+    gcode_line_count
+)
+if m31_header:
+    print("      Header: {}".format(m31_header.strip().replace('\n', ' | ')))
+
+# Create FileTransferThread directly with M31 header
+# This bypasses printFile() API but gets the M31 header benefit
+cmd._transfThread = transferThread.FileTransferThread(
+    cmd._beeCon,
+    gcode_file,
+    'gcode',
+    basename,
+    None,  # temperature=None (we'll heat manually with M703)
+    m31_header  # M31 header for print metadata
+)
+cmd._transfThread.start()
+print("      Transfer thread started with M31 header!")
 
 # Step 5: Monitor transfer progress
 print("\n[5/7] Monitoring transfer...")
@@ -141,8 +184,9 @@ else:
     print("      Could not read SD card file list")
 
 # Step 6: Heat nozzle using BEETHEFIRST M703 command
+# Using M703 instead of printFile()'s M104 heating to avoid temperature oscillations
 print("\n[6/7] Heating nozzle to {}C...".format(target_temp))
-print("      Using M703 heating command...")
+print("      Using M703 heating command (stable, no oscillations)...")
 response = cmd.sendCmd('M703 S{}\n'.format(target_temp))
 print("      M703 response: {}".format(response.strip() if response else 'No response'))
 
