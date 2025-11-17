@@ -140,9 +140,11 @@ if file_list and 'FileNames' in file_list:
 else:
     print("      Could not read SD card file list")
 
-# Step 6: Heat nozzle
+# Step 6: Heat nozzle using BEETHEFIRST M703 command
 print("\n[6/7] Heating nozzle to {}C...".format(target_temp))
-cmd.setNozzleTemperature(target_temp)
+print("      Using M703 heating command...")
+response = cmd.sendCmd('M703 S{}\n'.format(target_temp))
+print("      M703 response: {}".format(response.strip() if response else 'No response'))
 
 # Wait for temperature with timeout
 max_wait = 300  # 5 minutes
@@ -209,13 +211,8 @@ else:
 
 print("      Using SD filename: {}".format(sd_filename))
 
-# Home the printer before starting print
-print("      Homing printer axes...")
-cmd.home()
-time.sleep(2)
-print("      Homing complete")
-
 # Start print using M33 command (send directly with newline)
+# Note: Printer should already be homed from startup, M33 will handle positioning
 print("      Sending M33 command...")
 response = cmd.sendCmd('M33 {}\n'.format(sd_filename))
 print("      M33 response: '{}'".format(response.strip() if response else 'No response'))
