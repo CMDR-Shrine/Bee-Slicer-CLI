@@ -219,6 +219,12 @@ while time.time() - start_time < max_wait:
 # Step 7: Start print
 print("\n[7/7] Starting print...")
 
+# Initialize SD card first (M21)
+print("      Initializing SD card (M21)...")
+response = cmd.sendCmd('M21\n')
+print("      M21 response: '{}'".format(response.strip() if response else 'No response'))
+time.sleep(2)
+
 # Calculate expected SD filename (match transferThread.py logic exactly)
 sd_filename = re.sub('[\W_]+', '', basename)  # Remove special chars (dots, spaces, etc)
 if len(sd_filename) > 8:
@@ -272,20 +278,26 @@ print("      Sending M24 (Start SD print)...")
 response = cmd.sendCmd('M24\n')
 print("      M24 response: '{}'".format(response.strip() if response else 'No response'))
 
-# Give printer a moment to start
-print("      Waiting for print to start...")
-time.sleep(3)
+# Give printer time to start - check status multiple times over 30 seconds
+print("      Waiting for print to start (checking over 30 seconds)...")
+is_printing = False
+status = "Unknown"
 
-# Verify print started
-is_printing = cmd.isPrinting()
-status = cmd.getStatus()
-if is_printing:
-    print("      Print started successfully!")
-else:
-    print("      WARNING: Printer status shows not printing!")
-    print("      Printer status: {}".format(status))
+for i in range(6):  # Check 6 times over 30 seconds
+    time.sleep(5)
+    is_printing = cmd.isPrinting()
+    status = cmd.getStatus()
+    print("      Check {}/6: Status={}, Printing={}".format(i+1, status, is_printing))
+
+    if is_printing:
+        print("      Print started successfully!")
+        break
+
+if not is_printing:
+    print("      WARNING: Printer status shows not printing after 30 seconds!")
+    print("      Final status: {}".format(status))
     if status == 'Shutdown':
-        print("      Printer still in Shutdown mode - this is unexpected!")
+        print("      Printer in Shutdown mode - this is unexpected!")
     print("      Check printer display for error messages")
 
 print("\n" + "="*60)
