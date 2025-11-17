@@ -4,10 +4,13 @@
 Standalone BEETHEFIRST Printer Script
 No Docker required - uses local Python 2.7 environment
 
-This script uses a hybrid approach:
-- Manually creates M31 header (like printFile API) for proper metadata
-- Uses M104 for heating (standard Marlin)
-- Uses M33 to start print (BEETHEFIRST-specific, M23/M24 don't work)
+This script uses FileTransferThread with transferType='print':
+- Generates M31 header with print metadata (time estimate, line count)
+- Transfers file to SD card with M31 header
+- Background thread automatically heats nozzle
+- Background thread sends M33 to start print after heating completes
+
+This puts the printer into SD_Print mode (status S:5) for autonomous printing.
 
 Usage:
     python2 print.py <gcode_file>
@@ -151,18 +154,18 @@ m31_header = BeeCmd.BeeCmd.generatePrintInfoHeader(
 if m31_header:
     print("      Header: {}".format(m31_header.strip().replace('\n', ' | ')))
 
-# Create FileTransferThread directly with M31 header
-# This bypasses printFile() API but gets the M31 header benefit
+# Create FileTransferThread directly with M31 header and 'print' type
+# transferType='print' makes it call waitForHeatingAndPrint() which sends M33!
 cmd._transfThread = transferThread.FileTransferThread(
     cmd._beeCon,
     gcode_file,
-    'gcode',
+    'print',  # CRITICAL: 'print' not 'gcode' - this triggers M33 after transfer!
     basename,
-    None,  # temperature=None (we'll heat manually with M703)
+    target_temp,  # Pass temperature so it waits for heating then sends M33
     m31_header  # M31 header for print metadata
 )
 cmd._transfThread.start()
-print("      Transfer thread started with M31 header!")
+print("      Transfer thread started - will auto-heat and start print!")
 
 # Step 5: Monitor transfer progress
 print("\n[5/7] Monitoring transfer...")
@@ -189,112 +192,42 @@ if file_list and 'FileNames' in file_list:
 else:
     print("      Could not read SD card file list")
 
-# Step 6: Heat nozzle using standard M104 command
-print("\n[6/7] Heating nozzle to {}C...".format(target_temp))
-print("      Sending M104 S{} (Set Hotend Temperature)...".format(target_temp))
-response = cmd.sendCmd('M104 S{}\n'.format(target_temp))
-print("      M104 response: {}".format(response.strip() if response else 'No response'))
+# Step 6 & 7: Transfer thread will auto-heat and start print
+print("\n[6/7] Transfer thread is now heating and starting print...")
+print("      The thread will:")
+print("      1. Heat to {}C".format(target_temp))
+print("      2. Wait for target temperature")
+print("      3. Send M33 command to start print")
 
-# Wait for temperature with timeout
-max_wait = 300  # 5 minutes
-start_time = time.time()
-last_reported_temp = -999
-
-while time.time() - start_time < max_wait:
-    current_temp = cmd.getNozzleTemperature()
-
-    if current_temp is not None:
-        # Report temperature every 5 degrees change
-        if abs(current_temp - last_reported_temp) >= 5:
-            print("      Current: {:.1f}C / Target: {}C".format(current_temp, target_temp))
-            last_reported_temp = current_temp
-
-        # Check if target reached
-        if current_temp >= target_temp - 2:  # Within 2 degrees
-            print("      Target temperature reached: {:.1f}C!".format(current_temp))
-            break
-
-    time.sleep(2)
-
-# Step 7: Start print
-print("\n[7/7] Starting print...")
-
-# Initialize SD card first (M21)
-print("      Initializing SD card (M21)...")
-response = cmd.sendCmd('M21\n')
-print("      M21 response: '{}'".format(response.strip() if response else 'No response'))
-time.sleep(2)
-
-# Calculate expected SD filename (match transferThread.py logic exactly)
-sd_filename = re.sub('[\W_]+', '', basename)  # Remove special chars (dots, spaces, etc)
-if len(sd_filename) > 8:
-    sd_filename = sd_filename[:7]  # Truncate to 7 chars like transferThread does
-if sd_filename and sd_filename[0].isdigit():
-    sd_filename = 'a' + sd_filename[1:7]
-
-print("      Expected SD filename: {}".format(sd_filename))
-
-# Find matching file on SD card
-matched_file = None
-if file_list and 'FileNames' in file_list:
-    sd_filename_upper = sd_filename.upper()
-
-    # First try exact match
-    if sd_filename_upper in file_list['FileNames']:
-        matched_file = sd_filename_upper
-        print("      Exact match found: {}".format(matched_file))
-    else:
-        # Try to find a file that starts with our expected name
-        # This handles cases where the SD card truncated the filename further
-        for f in file_list['FileNames']:
-            if f.startswith(sd_filename_upper[:6]):  # Match first 6 chars
-                matched_file = f
-                print("      Partial match found: {} (expected: {})".format(f, sd_filename_upper))
-                break
-
-        if not matched_file:
-            print("      WARNING: No matching file found on SD card!")
-            print("      Expected: {}".format(sd_filename_upper))
-            print("      Available: {}".format(file_list['FileNames']))
-            print("      Using expected name anyway...")
-            matched_file = sd_filename_upper
-
-if matched_file:
-    sd_filename = matched_file
-else:
-    sd_filename = sd_filename.upper()
-
-print("      Using SD filename: {}".format(sd_filename))
-
-# Start print using M33 (BEETHEFIRST-specific command)
-# M23/M24 don't work on this printer - got "error opening file" and "Bad M-code 24"
-print("      Using startSDPrint() API with M33...")
-result = cmd.startSDPrint(sd_filename)
-print("      startSDPrint() result: {}".format(result))
-
-# Also try sending M33 directly to see the response
-time.sleep(1)
-print("      Sending M33 {} directly (for debugging)...".format(sd_filename))
-response = cmd.sendCmd('M33 {}\n'.format(sd_filename))
-print("      M33 response: '{}'".format(response.strip() if response else 'No response'))
-
-# Give printer time to start - check status multiple times over 30 seconds
-print("      Waiting for print to start (checking over 30 seconds)...")
+# Wait for heating and print to start - check status over time
+print("\n[7/7] Waiting for heating and print to start...")
+print("      (This may take several minutes to heat up)")
 is_printing = False
 status = "Unknown"
+last_temp = 0
 
-for i in range(6):  # Check 6 times over 30 seconds
-    time.sleep(5)
+# Check every 10 seconds for up to 5 minutes
+for i in range(30):  # 30 checks * 10 seconds = 5 minutes max
+    time.sleep(10)
+
+    # Get current status
     is_printing = cmd.isPrinting()
     status = cmd.getStatus()
-    print("      Check {}/6: Status={}, Printing={}".format(i+1, status, is_printing))
+    current_temp = cmd.getNozzleTemperature()
+
+    if current_temp is not None and current_temp != last_temp:
+        print("      Check {}/30: Temp={:.1f}C, Status={}, Printing={}".format(
+            i+1, current_temp, status, is_printing))
+        last_temp = current_temp
+    else:
+        print("      Check {}/30: Status={}, Printing={}".format(i+1, status, is_printing))
 
     if is_printing:
         print("      Print started successfully!")
         break
 
 if not is_printing:
-    print("      WARNING: Printer status shows not printing after 30 seconds!")
+    print("      WARNING: Printer status shows not printing after 5 minutes!")
     print("      Final status: {}".format(status))
     if status == 'Shutdown':
         print("      Printer in Shutdown mode - this is unexpected!")
