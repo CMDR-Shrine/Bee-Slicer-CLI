@@ -255,11 +255,11 @@ else:
 
 print("      Using SD filename: {}".format(sd_filename))
 
-# Start print using M33 command (send directly with newline)
-# Note: Printer should already be homed from startup, M33 will handle positioning
-print("      Sending M33 command...")
-response = cmd.sendCmd('M33 {}\n'.format(sd_filename))
-print("      M33 response: '{}'".format(response.strip() if response else 'No response'))
+# Start print using M32 command (Select and Start in one command)
+# M32 is standard Marlin "Select and Start" - M33 is actually "Get Long Path"!
+print("      Sending M32 command (Select and Start)...")
+response = cmd.sendCmd('M32 {}\n'.format(sd_filename))
+print("      M32 response: '{}'".format(response.strip() if response else 'No response'))
 
 # Give printer a moment to start
 print("      Waiting for print to start...")
