@@ -128,8 +128,7 @@ while cmd.isTransferring():
         last_transfer_progress = progress
 
 print("      Transfer complete!")
-
-# Wait a moment for SD card to finish writing
+# Wait a moment for SD card to finish writing and closing
 time.sleep(2)
 
 # Check what files are on SD card
