@@ -227,39 +227,53 @@ if 'error' in response.lower():
     print("      ERROR: M23 failed to select file!")
     sys.exit(1)
 
-# Home all axes before printing (required by BEETHEFIRST firmware)
-print("      Sending G28 (Home all axes)...")
-response = cmd.sendCmd('G28\n')
-print("      G28: {}".format(response.strip() if response else 'No response'))
-print("      Waiting for homing to complete...")
-time.sleep(10)  # Give it time to home all axes
-
-# BEETHEFIRST firmware doesn't implement M24 (standard SD print start)
-# Instead it uses M33 as a custom command to start SD printing
+# Start autonomous SD printing with M33 (BEETHEFIRST custom command)
+# Based on official BeeSlicer software - just "M33" alone, no filename!
+# NOTE: Official software does NOT send G28 before print - printer homes from G-code
 time.sleep(1)
-print("      Sending M33 {} (Start SD print - BEETHEFIRST custom command)...".format(sd_filename_lower))
-response = cmd.sendCmd('M33 {}\n'.format(sd_filename_lower))
+print("      Sending M33 (Start autonomous SD print)...")
+response = cmd.sendCmd('M33\n')
 print("      M33: {}".format(response.strip() if response else 'No response'))
 
-# Wait for print to start
-print("      Waiting for print to start (checking for 30 seconds)...")
+# Wait for print to initialize and check status using M32 (official method)
+print("      Waiting 5 seconds for print to initialize...")
+time.sleep(5)
+
+print("      Checking print status with M32 (print session variables)...")
+print("      M32 returns: A<estimated> B<elapsed> C<totalLines> D<currentLine>")
+print("")
+
 is_printing = False
-status = "Unknown"
-
 for i in range(6):  # Check 6 times over 30 seconds
-    time.sleep(5)
-    is_printing = cmd.isPrinting()
-    status = cmd.getStatus()
-    print("      Check {}/6: Status={}, Printing={}".format(i+1, status, is_printing))
+    # M32 returns print session variables - official BeeSlicer method
+    response = cmd.sendCmd('M32\n')
+    response_str = response.strip() if response else 'No response'
+    print("      M32: {}".format(response_str))
 
-    if is_printing:
-        print("      Print started successfully!")
+    # Check if we're getting print progress data (indicates printing)
+    if response and ('A' in response or 'B' in response or 'D' in response):
+        is_printing = True
+        print("      ✓ Print session active!")
         break
 
+    # Also check M625 status
+    status_response = cmd.sendCmd('M625\n')
+    print("      M625: {}".format(status_response.strip() if status_response else 'No response'))
+
+    # s:5 means printing state
+    if status_response and 's:5' in status_response:
+        is_printing = True
+        print("      ✓ Printer status: s:5 (Printing)")
+        break
+
+    if i < 5:  # Don't sleep on last iteration
+        print("      Waiting... ({}/{})".format(i+1, 6))
+        time.sleep(5)
+
 if not is_printing:
-    print("      WARNING: Printer status shows not printing after 30 seconds!")
-    print("      Final status: {}".format(status))
-    print("      Check printer display for error messages")
+    print("\n      ⚠ WARNING: Print status unclear after 30 seconds")
+    print("      The print may still start successfully.")
+    print("      Check the printer display to verify.")
 
 print("\n" + "="*60)
 print("PRINT STARTED!" if is_printing else "WAITING FOR PRINT...")
