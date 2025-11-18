@@ -224,16 +224,15 @@ response = cmd.sendCmd('M23 {}\n'.format(sd_filename_lower))
 print("      M23: {}".format(response.strip() if response else 'No response'))
 
 if 'error' in response.lower():
-    print("      ERROR: M23 failed! Trying M32 with !filename# syntax...")
-    # Try M32 as fallback
-    response = cmd.sendCmd('M32 !{}\n'.format(sd_filename_lower))
-    print("      M32: {}".format(response.strip() if response else 'No response'))
-else:
-    # M23 worked, now send M24
-    time.sleep(1)
-    print("      Sending M24 (Start SD print)...")
-    response = cmd.sendCmd('M24\n')
-    print("      M24: {}".format(response.strip() if response else 'No response'))
+    print("      ERROR: M23 failed to select file!")
+    sys.exit(1)
+
+# BEETHEFIRST firmware doesn't implement M24 (standard SD print start)
+# Instead it uses M33 as a custom command to start SD printing
+time.sleep(1)
+print("      Sending M33 {} (Start SD print - BEETHEFIRST custom command)...".format(sd_filename_lower))
+response = cmd.sendCmd('M33 {}\n'.format(sd_filename_lower))
+print("      M33: {}".format(response.strip() if response else 'No response'))
 
 # Wait for print to start
 print("      Waiting for print to start (checking for 30 seconds)...")
