@@ -673,19 +673,41 @@ response = cmd.sendCmd("M33 MYPRINT\n")
 
 ## BEETHEFIRST-Specific G-code Commands
 
-The BEETHEFIRST firmware supports these special commands:
+The BEETHEFIRST firmware is based on Marlin 1.1.x and supports standard Marlin commands.
 
-### M33 - Start SD Print
-Starts printing a file from the SD card.
+### M23 / M24 - SD Card Printing
+
+**CRITICAL:** The BEETHEFIRST firmware converts filenames to **lowercase** when using M23!
+
+**M23 - Select SD File:**
+```gcode
+M23 myprint    # Use lowercase filename!
+```
+
+**M24 - Start/Resume SD Print:**
+```gcode
+M24
+```
+
+**Example workflow:**
+```python
+# Files on SD card are stored as UPPERCASE (e.g., "MYPRINT")
+# But you MUST send lowercase to M23!
+cmd.sendCmd('M23 myprint\n')  # lowercase!
+cmd.sendCmd('M24\n')
+```
+
+### M33 - Get Long Filename
+**Note:** M33 is NOT a print command! It retrieves the long filename for a given path.
 
 **Format:** `M33 <filename>`
 
 **Example:**
 ```gcode
-M33 PRINT001
+M33 PRINT~1
 ```
 
-**Note:** This is the BEETHEFIRST-specific alternative to the standard Marlin M23/M24 commands.
+This returns the full filename if the filesystem uses 8.3 naming.
 
 ---
 

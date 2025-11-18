@@ -4,13 +4,14 @@
 Standalone BEETHEFIRST Printer Script
 No Docker required - uses local Python 2.7 environment
 
-This script uses FileTransferThread with transferType='print':
-- Generates M31 header with print metadata (time estimate, line count)
-- Transfers file to SD card with M31 header
-- Background thread automatically heats nozzle
-- Background thread sends M33 to start print after heating completes
+Key discovery: The BEETHEFIRST firmware converts filenames to LOWERCASE
+when using M23! So we must send lowercase filenames.
 
-This puts the printer into SD_Print mode (status S:5) for autonomous printing.
+Workflow:
+1. Transfer G-code file to SD card
+2. Heat nozzle to target temperature
+3. Send M23 with LOWERCASE filename to select file
+4. Send M24 to start printing
 
 Usage:
     python2 print.py <gcode_file>
@@ -26,60 +27,45 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'beedriver'))
 
 try:
     import beedriver.connection as conn
-    import beedriver.transferThread as transferThread
-    import beedriver.commands as BeeCmd
 except ImportError as e:
     print("ERROR: Failed to import beedriver!")
     print("Error: {}".format(e))
     print("\nMake sure you run this via the print.sh wrapper script!")
     sys.exit(1)
 
+# Check args
 if len(sys.argv) < 2:
     print("Usage: python2 print.py <gcode_file>")
     sys.exit(1)
 
 gcode_file = sys.argv[1]
-
 if not os.path.exists(gcode_file):
     print("ERROR: File not found: {}".format(gcode_file))
     sys.exit(1)
 
 print("="*60)
-print("File: {}".format(os.path.basename(gcode_file)))
+print("BEETHEFIRST STANDALONE PRINTER")
 print("="*60)
+print("File: {}".format(gcode_file))
+print("")
 
-# Step 1: Connect
-print("\n[1/7] Connecting to printer...")
-c = conn.Conn()
-printers = c.getPrinterList()
-
-if not printers:
-    print("ERROR: No printer found!")
-    print("\nTroubleshooting:")
-    print("  1. Is printer powered on and connected via USB?")
-    print("  2. Run: lsusb | grep BEEVERYCREATIVE")
-    print("  3. Check USB permissions (see main README.md)")
-    sys.exit(1)
-
-c.connectToPrinter(printers[0])
-time.sleep(1)
-
-if not c.isConnected():
-    print("ERROR: Connection failed!")
-    print("\nTroubleshooting:")
-    print("  1. Make sure no other software is using the printer")
-    print("  2. Check: ps aux | grep -i bee")
+# Step 1: Connect to printer
+print("[1/7] Connecting to printer...")
+c = conn.getBeeConnection()
+if not c.connect():
+    print("ERROR: Failed to connect to printer!")
     sys.exit(1)
 
 cmd = c.getCommandIntf()
-print("      Connected to: {}".format(printers[0].get('Product', 'Unknown')))
-print("      Serial: {}".format(printers[0].get('Serial Number', 'Unknown')))
+print("      Connected!")
 
-# Step 2: Firmware mode
-print("\n[2/7] Ensuring firmware mode...")
+# Step 2: Check firmware mode
+print("\n[2/7] Checking printer mode...")
 mode = cmd.getPrinterMode()
-if mode != "Firmware":
-    print("      Switching to firmware...")
+print("      Mode: {}".format(mode))
+
+if mode != 'Firmware':
+    print("      Going to firmware mode...")
     cmd.goToFirmware()
     time.sleep(2)
 
@@ -98,7 +84,6 @@ print("      In firmware mode!")
 print("\n[3/7] Analyzing G-code file...")
 target_temp = 200  # default
 gcode_line_count = 0
-estimated_time_seconds = 0  # Will be rough estimate
 
 with open(gcode_file, 'r') as f:
     for line in f:
@@ -120,19 +105,14 @@ with open(gcode_file, 'r') as f:
 
 print("      G-code lines: {}".format(gcode_line_count))
 
-# Rough time estimate: ~0.1 seconds per line (very approximate)
-estimated_time_seconds = int(gcode_line_count * 0.1)
-estimated_minutes = estimated_time_seconds / 60
-print("      Estimated time: {} minutes (rough)".format(estimated_minutes))
-
 # Sanity check temperature
 if target_temp < 150:
     print("      WARNING: No heating commands found in G-code!")
     print("      Using default temperature: 200C")
     target_temp = 200
 
-# Step 4: Transfer file to SD card WITH M31 header
-print("\n[4/7] Transferring file to SD card with metadata...")
+# Step 4: Transfer file to SD card
+print("\n[4/7] Transferring file to SD card...")
 basename = os.path.basename(gcode_file)
 print("      File: {}".format(basename))
 
@@ -144,106 +124,116 @@ if sanitized_preview and sanitized_preview[0].isdigit():
     sanitized_preview = 'a' + sanitized_preview[1:7]
 print("      Expected SD name: {} (uppercase)".format(sanitized_preview.upper()))
 
-# Generate M31 header with print metadata (like printFile API does)
-print("      Generating M31 metadata header...")
-m31_header = BeeCmd.BeeCmd.generatePrintInfoHeader(
-    gcode_file,
-    estimated_time_seconds,
-    gcode_line_count
-)
-if m31_header:
-    print("      Header: {}".format(m31_header.strip().replace('\n', ' | ')))
-
-# Create FileTransferThread directly with M31 header and 'print' type
-# transferType='print' makes it call waitForHeatingAndPrint() which sends M33!
-cmd._transfThread = transferThread.FileTransferThread(
-    cmd._beeCon,
-    gcode_file,
-    'print',  # CRITICAL: 'print' not 'gcode' - this triggers M33 after transfer!
-    basename,
-    target_temp,  # Pass temperature so it waits for heating then sends M33
-    m31_header  # M31 header for print metadata
-)
-cmd._transfThread.start()
-print("      Transfer thread started - will auto-heat and start print!")
+cmd.transferSDFile(fileName=gcode_file, sdFileName=basename)
 
 # Step 5: Monitor transfer progress
 print("\n[5/7] Monitoring transfer...")
-
-last_transfer_progress = -1
-
+last_progress = -1
 while cmd.isTransferring():
-    time.sleep(2)
     progress = cmd.getTransferCompletionState()
-    if progress is not None and progress != last_transfer_progress:
-        print("      Transfer: {}%".format(progress))
-        last_transfer_progress = progress
+    if progress is not None and progress != last_progress:
+        print("      Transfer: {:.2f}%".format(progress))
+        last_progress = progress
+    time.sleep(1)
 
 print("      Transfer complete!")
-# Wait a moment for SD card to finish writing and closing
-time.sleep(2)
 
-# Check what files are on SD card
-print("      Checking SD card files...")
-file_list = cmd.getFileList()
-if file_list and 'FileNames' in file_list:
-    print("      Files on SD card: {}".format(file_list['FileNames']))
-    print("      Total files: {}".format(len(file_list['FileNames'])))
-else:
-    print("      Could not read SD card file list")
+# Step 6: Heat nozzle
+print("\n[6/7] Heating nozzle to {}C...".format(target_temp))
+cmd.sendCmd('M104 S{}\n'.format(target_temp))
 
-# Step 6 & 7: Transfer thread will auto-heat and start print
-print("\n[6/7] Transfer thread is now heating and starting print...")
-print("      The thread will:")
-print("      1. Heat to {}C".format(target_temp))
-print("      2. Wait for target temperature")
-print("      3. Send M33 command to start print")
+max_wait = 300  # 5 minutes
+start_time = time.time()
+last_reported_temp = -999
 
-# Wait for heating and print to start - check status over time
-print("\n[7/7] Waiting for heating and print to start...")
-print("      (This may take several minutes to heat up)")
-is_printing = False
-status = "Unknown"
-last_temp = 0
-
-# Check every 10 seconds for up to 5 minutes
-for i in range(30):  # 30 checks * 10 seconds = 5 minutes max
-    time.sleep(10)
-
-    # Get current status
-    is_printing = cmd.isPrinting()
-    status = cmd.getStatus()
+while time.time() - start_time < max_wait:
     current_temp = cmd.getNozzleTemperature()
 
-    if current_temp is not None and current_temp != last_temp:
-        print("      Check {}/30: Temp={:.1f}C, Status={}, Printing={}".format(
-            i+1, current_temp, status, is_printing))
-        last_temp = current_temp
-    else:
-        print("      Check {}/30: Status={}, Printing={}".format(i+1, status, is_printing))
+    if current_temp is not None:
+        # Report temperature every 5 degrees change
+        if abs(current_temp - last_reported_temp) >= 5:
+            print("      Current: {:.1f}C / Target: {}C".format(current_temp, target_temp))
+            last_reported_temp = current_temp
+
+        # Check if target reached
+        if current_temp >= target_temp - 2:  # Within 2 degrees
+            print("      Target temperature reached: {:.1f}C!".format(current_temp))
+            break
+
+    time.sleep(2)
+
+# Step 7: Start print
+print("\n[7/7] Starting print...")
+
+# Calculate expected SD filename (match transferThread.py logic exactly)
+sd_filename = re.sub('[\W_]+', '', basename)  # Remove special chars
+if len(sd_filename) > 8:
+    sd_filename = sd_filename[:7]  # Truncate to 7 chars
+if sd_filename and sd_filename[0].isdigit():
+    sd_filename = 'a' + sd_filename[1:7]
+
+# CRITICAL: Use LOWERCASE for M23 command!
+# The BEETHEFIRST firmware converts filenames to lowercase internally
+sd_filename_lower = sd_filename.lower()
+
+print("      SD filename (lowercase): {}".format(sd_filename_lower))
+
+# Initialize SD card
+print("      Sending M21 (Init SD card)...")
+response = cmd.sendCmd('M21\n')
+print("      M21: {}".format(response.strip() if response else 'No response'))
+time.sleep(1)
+
+# Select file with M23 (LOWERCASE filename!)
+print("      Sending M23 {} (Select SD file)...".format(sd_filename_lower))
+response = cmd.sendCmd('M23 {}\n'.format(sd_filename_lower))
+print("      M23: {}".format(response.strip() if response else 'No response'))
+
+if 'error' in response.lower():
+    print("      ERROR: M23 failed! Trying M32 with !filename# syntax...")
+    # Try M32 as fallback
+    response = cmd.sendCmd('M32 !{}\n'.format(sd_filename_lower))
+    print("      M32: {}".format(response.strip() if response else 'No response'))
+else:
+    # M23 worked, now send M24
+    time.sleep(1)
+    print("      Sending M24 (Start SD print)...")
+    response = cmd.sendCmd('M24\n')
+    print("      M24: {}".format(response.strip() if response else 'No response'))
+
+# Wait for print to start
+print("      Waiting for print to start (checking for 30 seconds)...")
+is_printing = False
+status = "Unknown"
+
+for i in range(6):  # Check 6 times over 30 seconds
+    time.sleep(5)
+    is_printing = cmd.isPrinting()
+    status = cmd.getStatus()
+    print("      Check {}/6: Status={}, Printing={}".format(i+1, status, is_printing))
 
     if is_printing:
         print("      Print started successfully!")
         break
 
 if not is_printing:
-    print("      WARNING: Printer status shows not printing after 5 minutes!")
+    print("      WARNING: Printer status shows not printing after 30 seconds!")
     print("      Final status: {}".format(status))
-    if status == 'Shutdown':
-        print("      Printer in Shutdown mode - this is unexpected!")
     print("      Check printer display for error messages")
 
 print("\n" + "="*60)
 print("PRINT STARTED!" if is_printing else "WAITING FOR PRINT...")
 print("="*60)
-print("")
-print("Monitoring status (Ctrl+C to exit)...")
-print("="*60 + "\n")
 
-# Simple monitoring loop
+# Monitor print status
+print("\nMonitoring status (Ctrl+C to exit)...")
+print("="*60)
+print("")
+
 try:
     while True:
-        time.sleep(5)
+        time.sleep(7)
+
         try:
             temps = cmd.getTemperatures()
             nozzle = temps.get('Nozzle', 'N/A')
@@ -253,17 +243,17 @@ try:
             print("[{}] Temp: {}C | Status: {} | Printing: {}".format(
                 time.strftime("%H:%M:%S"), nozzle, status, is_printing))
 
-            # Exit if print finished and cooled down
-            if not is_printing and isinstance(nozzle, float) and nozzle < 50:
-                print("\nPrint finished!")
+            if status == 'Shutdown' or not is_printing:
+                print("\nPrint completed or stopped.")
                 break
 
         except Exception as e:
-            print("Error: {}".format(e))
+            print("Error reading status: {}".format(e))
+            break
 
 except KeyboardInterrupt:
-    print("\n\nExiting... (print continues on printer)")
+    print("\n\nMonitoring stopped by user.")
 
-# Cleanup
+print("\nClosing connection...")
 c.close()
-print("Disconnected")
+print("Done!")

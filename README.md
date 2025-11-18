@@ -56,9 +56,9 @@ lsusb | grep BEEVERYCREATIVE
 
 1. **Connects** to your BEETHEFIRST printer via USB
 2. **Reads** the target temperature from your G-code (M104/M109 commands)
-3. **Heats** the nozzle to target temperature
-4. **Transfers** the G-code file to printer's internal SD card
-5. **Starts** the print using M33 command (BEETHEFIRST-specific)
+3. **Transfers** the G-code file to printer's internal SD card
+4. **Heats** the nozzle to target temperature
+5. **Starts** the print using M23/M24 commands (standard Marlin)
 6. **Monitors** print progress and temperature
 
 ## Features
@@ -66,10 +66,10 @@ lsusb | grep BEEVERYCREATIVE
 ✅ **No Docker** - runs natively with Miniconda
 ✅ **Auto-setup** - first run installs everything automatically
 ✅ **PrusaSlicer compatible** - works with standard G-code output
-✅ **M33 print command** - uses correct BEETHEFIRST firmware command
+✅ **M23/M24 print commands** - uses standard Marlin SD card commands
 ✅ **Smart heating** - extracts temperature from your G-code
 ✅ **Progress monitoring** - shows real-time temperature and status
-✅ **Safe file naming** - automatically creates SD-card compatible names
+✅ **Safe file naming** - automatically creates SD-card compatible names (lowercase!)
 
 ## Usage Examples
 
@@ -104,23 +104,42 @@ Automatically installed by `print.sh`:
 ```
 1. Connect to printer
 2. Switch to firmware mode (if needed)
-3. Read target temperature from G-code
-4. Heat nozzle (M104 command)
-5. Transfer file to SD card
-6. Wait for SD card to be ready (3 second buffer)
-7. Start print with M33 <filename>
-8. Monitor temperature and print status
-9. Auto-exit when print finishes and cools down
+3. Analyze G-code file (read temperature, count lines)
+4. Transfer file to SD card
+5. Heat nozzle (M104 command)
+6. Initialize SD card (M21)
+7. Select file with M23 <lowercase_filename>
+8. Start print with M24
+9. Monitor temperature and print status
 ```
 
-### M33 Command
+### Critical: Lowercase Filenames
 
-The BEETHEFIRST firmware uses **M33 <filename>** to start printing from SD card, not the standard Marlin M23/M24 commands.
+**The BEETHEFIRST firmware converts filenames to lowercase when using M23!**
+
+Files on SD card are stored as **UPPERCASE** (e.g., `MYPRINT`), but you **MUST** send **lowercase** to M23:
+
+```gcode
+M23 myprint    # Correct! (lowercase)
+M23 MYPRINT    # Wrong! (will get "error opening file")
+```
+
+The script handles this automatically.
+
+### M23/M24 Commands
+
+The BEETHEFIRST firmware uses standard Marlin SD card commands:
+
+- **M23 <filename>** - Select SD file (must be lowercase!)
+- **M24** - Start/Resume SD print
 
 Example:
 ```gcode
-M33 PRINT    ; Start printing file "PRINT" from SD card
+M23 myprint    ; Select file (lowercase!)
+M24            ; Start printing
 ```
+
+**Note:** M33 is NOT a print command! M33 is "Get Long Filename" and only retrieves filename information.
 
 ## Troubleshooting
 
@@ -146,9 +165,11 @@ docker stop beeweb-server
 ### Print doesn't start
 
 1. Make sure your G-code has M104/M109 heating commands
-2. Check that the file transferred successfully
+2. Check that the file transferred successfully (100% in output)
 3. Wait for the heating phase to complete
-4. Verify M33 command was sent (shown in output)
+4. Verify M23 command was sent with lowercase filename (shown in output)
+5. Check for "error opening file" - this means filename case mismatch
+6. Ensure M24 command was sent after M23 succeeds
 
 ### "Command not found: conda"
 
