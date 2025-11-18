@@ -145,15 +145,11 @@ print("\n[4/7] Transferring file to SD card...")
 basename = os.path.basename(gcode_file)
 print("      File: {}".format(basename))
 
-# Show what the filename will become after sanitization
-sanitized_preview = re.sub('[\W_]+', '', basename)
-if len(sanitized_preview) > 8:
-    sanitized_preview = sanitized_preview[:7]
-if sanitized_preview and sanitized_preview[0].isdigit():
-    sanitized_preview = 'a' + sanitized_preview[1:7]
-print("      Expected SD name: {} (uppercase)".format(sanitized_preview.upper()))
+# Always use "ABCDE" as the SD filename (matches official BeeSlicer)
+# This prevents file accumulation - each print overwrites the previous one
+print("      SD filename: ABCDE (fixed, prevents file accumulation)")
 
-cmd.transferSDFile(fileName=gcode_file, sdFileName=basename)
+cmd.transferSDFile(fileName=gcode_file, sdFileName="ABCDE")
 
 # Step 5: Monitor transfer progress
 print("\n[5/7] Monitoring transfer...")
@@ -199,18 +195,10 @@ while time.time() - start_time < max_wait:
 # Step 7: Start print
 print("\n[7/7] Starting print...")
 
-# Calculate expected SD filename (match transferThread.py logic exactly)
-sd_filename = re.sub('[\W_]+', '', basename)  # Remove special chars
-if len(sd_filename) > 8:
-    sd_filename = sd_filename[:7]  # Truncate to 7 chars
-if sd_filename and sd_filename[0].isdigit():
-    sd_filename = 'a' + sd_filename[1:7]
-
-# CRITICAL: Use LOWERCASE for M23 command!
-# The BEETHEFIRST firmware converts filenames to lowercase internally
-sd_filename_lower = sd_filename.lower()
-
-print("      SD filename (lowercase): {}".format(sd_filename_lower))
+# Use "abcde" as the SD filename (lowercase for M23 command)
+# This matches what we transferred as "ABCDE" (firmware converts to lowercase)
+sd_filename_lower = "abcde"
+print("      SD filename: {}".format(sd_filename_lower))
 
 # Initialize SD card
 print("      Sending M21 (Init SD card)...")

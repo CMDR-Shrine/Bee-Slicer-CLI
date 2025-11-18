@@ -1,10 +1,11 @@
 #!/bin/bash
 #
-# BEETHEFIRST Standalone Printer Script
+# BEETHEFIRST Standalone Printer CLI
 # No Docker required - uses Miniconda Python 2.7 environment (x86_64)
 # or system Python 2.7 + virtualenv (ARM64/Raspberry Pi)
 #
-# Usage: ./print.sh <gcode_file>
+# Usage: ./print.sh [gcode_file]
+#        ./print.sh              (shows menu)
 #
 
 set -e
@@ -18,26 +19,69 @@ VENV_DIR="$SCRIPT_DIR/.venv_py27"
 # Detect architecture
 ARCH=$(uname -m)
 
-# Check if gcode file provided
+# Show menu if no arguments provided
 if [ -z "$1" ]; then
-    echo "Usage: $0 <gcode_file>"
+    echo "============================================================"
+    echo "BEETHEFIRST STANDALONE PRINTER CLI"
+    echo "============================================================"
     echo ""
-    echo "Example:"
-    echo "  $0 /path/to/your/print.gcode"
-    exit 1
-fi
+    echo "Select an option:"
+    echo "  1) Print from G-code file"
+    echo "  2) Load filament (heat + extrude)"
+    echo "  3) Unload filament (heat + retract)"
+    echo "  4) Exit"
+    echo ""
+    read -p "Choice [1-4]: " CHOICE
+    echo ""
 
-GCODE_FILE="$1"
-
-if [ ! -f "$GCODE_FILE" ]; then
-    echo "ERROR: File not found: $GCODE_FILE"
-    exit 1
+    case $CHOICE in
+        1)
+            read -p "Enter G-code file path: " GCODE_FILE
+            if [ -z "$GCODE_FILE" ]; then
+                echo "ERROR: No file specified"
+                exit 1
+            fi
+            if [ ! -f "$GCODE_FILE" ]; then
+                echo "ERROR: File not found: $GCODE_FILE"
+                exit 1
+            fi
+            MODE="print"
+            ;;
+        2)
+            MODE="load"
+            ;;
+        3)
+            MODE="unload"
+            ;;
+        4|q|Q)
+            echo "Goodbye!"
+            exit 0
+            ;;
+        *)
+            echo "Invalid choice"
+            exit 1
+            ;;
+    esac
+else
+    # Direct usage: ./print.sh <gcode_file>
+    GCODE_FILE="$1"
+    if [ ! -f "$GCODE_FILE" ]; then
+        echo "ERROR: File not found: $GCODE_FILE"
+        exit 1
+    fi
+    MODE="print"
 fi
 
 echo "============================================================"
-echo "BEETHEFIRST STANDALONE PRINTER"
-echo "============================================================"
-echo "G-code file: $(basename "$GCODE_FILE")"
+if [ "$MODE" = "print" ]; then
+    echo "BEETHEFIRST STANDALONE PRINTER"
+    echo "============================================================"
+    echo "G-code file: $(basename "$GCODE_FILE")"
+elif [ "$MODE" = "load" ]; then
+    echo "FILAMENT LOADER"
+elif [ "$MODE" = "unload" ]; then
+    echo "FILAMENT UNLOADER"
+fi
 echo "Architecture: $ARCH"
 echo "============================================================"
 echo ""
@@ -190,11 +234,21 @@ else
     fi
 fi
 
-# Run the print script
-echo "[2/3] Connecting to printer..."
+# Run the appropriate script based on mode
+echo "[2/3] Running $MODE script..."
 echo ""
 
-python "$SCRIPT_DIR/print.py" "$GCODE_FILE"
+case $MODE in
+    print)
+        python "$SCRIPT_DIR/print.py" "$GCODE_FILE"
+        ;;
+    load)
+        python "$SCRIPT_DIR/load.py"
+        ;;
+    unload)
+        python "$SCRIPT_DIR/unload.py"
+        ;;
+esac
 
 # Deactivate environment
 if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
