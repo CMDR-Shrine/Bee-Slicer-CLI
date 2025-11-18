@@ -1,0 +1,11 @@
+# BEETHEFIRST 3D Printer USB permissions
+# This file allows users in the 'dialout' group to access BEETHEFIRST printers
+
+# BEETHEFIRST original (Vendor ID 0xFFFF)
+SUBSYSTEM=="usb", ATTR{idVendor}=="ffff", ATTR{idProduct}=="014e", MODE="0666", GROUP="dialout"
+
+# BEETHEFIRST+ (Vendor ID 0x29C9)
+SUBSYSTEM=="usb", ATTR{idVendor}=="29c9", MODE="0666", GROUP="dialout"
+
+# Smoothieboard alternative firmware (Vendor ID 0x1D50)
+SUBSYSTEM=="usb", ATTR{idVendor}=="1d50", MODE="0666", GROUP="dialout"

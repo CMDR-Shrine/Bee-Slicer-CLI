@@ -149,10 +149,23 @@ class Conn:
             # Removes null character from the string returned from the usb driver
             currentSerialNumber = currentSerialNumber.strip('\x00')
 
+            # Try to read manufacturer and product, but handle langid errors
+            try:
+                manufacturer = dev.manufacturer
+            except:
+                manufacturer = 'Unknown'
+                pass
+
+            try:
+                product = dev.product
+            except:
+                product = 'Unknown'
+                pass
+
             printer = {'VendorID': str(dev.idVendor),
                        'ProductID': str(dev.idProduct),
-                       'Manufacturer': dev.manufacturer,
-                       'Product': dev.product,
+                       'Manufacturer': manufacturer,
+                       'Product': product,
                        'Serial Number': currentSerialNumber,
                        'Interfaces': []}
             for config in dev:

@@ -673,19 +673,44 @@ response = cmd.sendCmd("M33 MYPRINT\n")
 
 ## BEETHEFIRST-Specific G-code Commands
 
-The BEETHEFIRST firmware supports these special commands:
+The BEETHEFIRST firmware is based on Marlin 1.1.x and supports standard Marlin commands.
 
-### M33 - Start SD Print
-Starts printing a file from the SD card.
+### M23 / M24 - SD Card Printing
 
-**Format:** `M33 <filename>`
+**CRITICAL:** The BEETHEFIRST firmware converts filenames to **lowercase** when using M23!
 
-**Example:**
+**M23 - Select SD File:**
 ```gcode
-M33 PRINT001
+M23 myprint    # Use lowercase filename!
 ```
 
-**Note:** This is the BEETHEFIRST-specific alternative to the standard Marlin M23/M24 commands.
+**M24 - Start/Resume SD Print:**
+```gcode
+M24
+```
+
+**Example workflow:**
+```python
+# Files on SD card are stored as UPPERCASE (e.g., "MYPRINT")
+# But you MUST send lowercase to M23!
+cmd.sendCmd('M23 myprint\n')  # lowercase!
+cmd.sendCmd('M33 myprint\n')  # M33 to start (NOT M24!)
+```
+
+### M33 - Start SD Print (BEETHEFIRST Custom Command)
+**CRITICAL:** BEETHEFIRST firmware does NOT implement M24 (standard Marlin SD print start).
+Instead, it uses **M33** as a custom command to start SD card printing.
+
+**Format:** `M33 <filename>` (filename optional if already selected with M23)
+
+**Correct SD Print Sequence:**
+```gcode
+M21              # Initialize SD card
+M23 myprint      # Select file (LOWERCASE filename!)
+M33 myprint      # Start printing (BEETHEFIRST-specific)
+```
+
+**Note:** In standard Marlin firmware, M33 is "Get Long Filename", but BEETHEFIRST repurposed this command for starting SD prints. M24 will return "Bad M-code 24" error.
 
 ---
 
@@ -777,7 +802,7 @@ print("Transfer complete!")
 - **Filename limitations:** SD card filenames must be max 8 characters, no special characters, and cannot start with a digit.
 - **Thread safety:** The beedriver library uses threading internally. File transfers and heating operations run in background threads.
 - **Connection persistence:** Keep the connection object alive during prints! Closing the connection will stop background operations.
-- **M33 vs M23/M24:** BEETHEFIRST firmware uses `M33 <filename>` instead of the standard Marlin `M23` (select file) + `M24` (start print) commands.
+- **M33 vs M24:** BEETHEFIRST firmware does NOT implement M24 (standard Marlin start print). Instead it uses `M33 <filename>` as a custom command to start SD printing. Use: `M23 <file>` (select) + `M33 <file>` (start).
 
 ---
 
