@@ -109,15 +109,15 @@ if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
 
     # Check if virtualenv is available
     if ! python2.7 -m virtualenv --version &> /dev/null 2>&1; then
-        echo "[SETUP] Installing virtualenv for Python 2.7..."
-        # Try to install virtualenv via pip
-        if command -v pip2 &> /dev/null; then
-            pip2 install --user virtualenv
-        else
-            echo "ERROR: pip2 not found. Install python-pip:"
-            echo "  sudo apt install -y python-pip"
-            exit 1
-        fi
+        echo "ERROR: virtualenv not found for Python 2.7!"
+        echo ""
+        echo "Install it with:"
+        echo "  sudo apt install -y python-virtualenv"
+        echo ""
+        echo "Or via pip (if not in a virtualenv):"
+        echo "  pip2 install virtualenv"
+        echo ""
+        exit 1
     fi
 
     # Create virtualenv if it doesn't exist
