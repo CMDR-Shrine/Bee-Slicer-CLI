@@ -125,22 +125,20 @@ with open(gcode_file, 'r') as f:
         gcode_line_count += 1
 
         # Extract temperature from M104/M109 commands
+        # Only accept temps > 150C (ignore M104 S0 which turns off heater)
         if line.startswith('M104') or line.startswith('M109'):
             if ' S' in line:
                 try:
                     temp_str = line.split(' S')[1].split()[0].split(';')[0]
-                    target_temp = int(float(temp_str))
-                    print("      Found temperature: {}C".format(target_temp))
+                    temp = int(float(temp_str))
+                    if temp > 150:  # Ignore heater-off commands
+                        target_temp = temp
+                        print("      Found temperature: {}C".format(target_temp))
                 except:
                     pass
 
 print("      G-code lines: {}".format(gcode_line_count))
-
-# Sanity check temperature
-if target_temp < 150:
-    print("      WARNING: No heating commands found in G-code!")
-    print("      Using default temperature: 200C")
-    target_temp = 200
+print("      Target temperature: {}C".format(target_temp))
 
 # Step 4: Transfer file to SD card
 print("\n[4/7] Transferring file to SD card...")
@@ -163,8 +161,13 @@ last_progress = -1
 while cmd.isTransferring():
     progress = cmd.getTransferCompletionState()
     if progress is not None and progress != last_progress:
-        print("      Transfer: {:.2f}%".format(progress))
-        last_progress = progress
+        # Convert to float if it's a string
+        try:
+            progress_num = float(progress)
+            print("      Transfer: {:.2f}%".format(progress_num))
+            last_progress = progress
+        except (ValueError, TypeError):
+            pass
     time.sleep(1)
 
 print("      Transfer complete!")
