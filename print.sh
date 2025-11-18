@@ -1,7 +1,8 @@
 #!/bin/bash
 #
 # BEETHEFIRST Standalone Printer Script
-# No Docker required - uses Miniconda Python 2.7 environment
+# No Docker required - uses Miniconda Python 2.7 environment (x86_64)
+# or system Python 2.7 + virtualenv (ARM64/Raspberry Pi)
 #
 # Usage: ./print.sh <gcode_file>
 #
@@ -12,6 +13,10 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_NAME="beethefirst"
 MINICONDA_DIR="$HOME/.config/miniconda3"
+VENV_DIR="$SCRIPT_DIR/.venv_py27"
+
+# Detect architecture
+ARCH=$(uname -m)
 
 # Check if gcode file provided
 if [ -z "$1" ]; then
@@ -33,6 +38,7 @@ echo "============================================================"
 echo "BEETHEFIRST STANDALONE PRINTER"
 echo "============================================================"
 echo "G-code file: $(basename "$GCODE_FILE")"
+echo "Architecture: $ARCH"
 echo "============================================================"
 echo ""
 
@@ -76,29 +82,6 @@ if [ -n "$CONFLICTING_PROCS" ]; then
         # Wait a moment for processes to die
         sleep 2
 
-        # Check if anything is still using the USB device
-        USB_USERS=$(sudo lsof /dev/bus/usb/001/* 2>/dev/null | grep -v "^COMMAND" || true)
-        if [ -n "$USB_USERS" ]; then
-            echo ""
-            echo "WARNING: USB device still in use:"
-            echo "$USB_USERS"
-            echo ""
-            read -p "Force kill remaining processes? [y/N] " -n 1 -r
-            echo ""
-            if [[ $REPLY =~ ^[Yy]$ ]]; then
-                sudo lsof /dev/bus/usb/001/* 2>/dev/null | grep -v "^COMMAND" | awk '{print $2}' | while read pid; do
-                    if [ -n "$pid" ]; then
-                        echo "  Force killing PID $pid..."
-                        sudo kill -9 "$pid" 2>/dev/null || true
-                    fi
-                done
-                sleep 1
-            else
-                echo "Aborted. Please manually stop processes using the printer."
-                exit 1
-            fi
-        fi
-
         echo "Processes stopped. Continuing..."
         echo ""
     else
@@ -109,41 +92,102 @@ else
     echo "      No conflicting processes found."
 fi
 
-# Check if miniconda is installed
-if [ ! -d "$MINICONDA_DIR" ]; then
-    echo "ERROR: Miniconda not found at $MINICONDA_DIR"
-    echo "Please install Miniconda first or update MINICONDA_DIR in this script"
-    exit 1
-fi
+# ARM64 (Raspberry Pi) - use system Python 2.7 with virtualenv
+if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
+    echo "[1/3] Using system Python 2.7 (ARM64 platform)..."
 
-# Initialize conda
-source "$MINICONDA_DIR/etc/profile.d/conda.sh"
+    # Check if Python 2.7 is installed
+    if ! command -v python2.7 &> /dev/null; then
+        echo "ERROR: Python 2.7 not found!"
+        echo ""
+        echo "Install it with:"
+        echo "  sudo apt update"
+        echo "  sudo apt install -y python2.7 python-pip-whl python-setuptools-whl"
+        echo ""
+        exit 1
+    fi
 
-# Check if environment exists
-if ! conda env list | grep -q "^$ENV_NAME "; then
-    echo "[SETUP] Creating Python 2.7 environment '$ENV_NAME'..."
-    conda create -y -n "$ENV_NAME" python=2.7
+    # Check if virtualenv is available
+    if ! python2.7 -m virtualenv --version &> /dev/null 2>&1; then
+        echo "[SETUP] Installing virtualenv for Python 2.7..."
+        # Try to install virtualenv via pip
+        if command -v pip2 &> /dev/null; then
+            pip2 install --user virtualenv
+        else
+            echo "ERROR: pip2 not found. Install python-pip:"
+            echo "  sudo apt install -y python-pip"
+            exit 1
+        fi
+    fi
 
-    echo "[SETUP] Installing dependencies..."
+    # Create virtualenv if it doesn't exist
+    if [ ! -d "$VENV_DIR" ]; then
+        echo "[SETUP] Creating Python 2.7 virtualenv..."
+        python2.7 -m virtualenv "$VENV_DIR"
+
+        echo "[SETUP] Installing dependencies..."
+        source "$VENV_DIR/bin/activate"
+        pip install pyusb==1.0.2 pyserial==2.7
+        deactivate
+
+        echo "[SETUP] Virtualenv created successfully!"
+    fi
+
+    # Activate virtualenv
+    source "$VENV_DIR/bin/activate"
+
+    PYTHON_VERSION=$(python --version 2>&1)
+    echo "      Python: $PYTHON_VERSION"
+
+    # Install missing dependencies if needed
+    if ! python -c "import serial" 2>/dev/null; then
+        echo "      Installing pyserial..."
+        pip install -q pyserial==2.7
+    fi
+
+    if ! python -c "import usb" 2>/dev/null; then
+        echo "      Installing pyusb..."
+        pip install -q pyusb==1.0.2
+    fi
+
+# x86_64 - use Miniconda as before
+else
+    # Check if miniconda is installed
+    if [ ! -d "$MINICONDA_DIR" ]; then
+        echo "ERROR: Miniconda not found at $MINICONDA_DIR"
+        echo "Please install Miniconda first or update MINICONDA_DIR in this script"
+        exit 1
+    fi
+
+    # Initialize conda
+    source "$MINICONDA_DIR/etc/profile.d/conda.sh"
+
+    # Check if environment exists
+    if ! conda env list | grep -q "^$ENV_NAME "; then
+        echo "[SETUP] Creating Python 2.7 environment '$ENV_NAME'..."
+        conda create -y -n "$ENV_NAME" python=2.7
+
+        echo "[SETUP] Installing dependencies..."
+        conda activate "$ENV_NAME"
+        pip install pyusb==1.0.2 pyserial==2.7
+        conda deactivate
+
+        echo "[SETUP] Environment created successfully!"
+    fi
+
+    # Activate environment
+    echo "[1/3] Activating Python 2.7 environment..."
     conda activate "$ENV_NAME"
-    pip install pyusb==1.0.2 pyserial==2.7
-    conda deactivate
 
-    echo "[SETUP] Environment created successfully!"
-fi
+    # Check Python version
+    PYTHON_VERSION=$(python --version 2>&1)
+    echo "      Python: $PYTHON_VERSION"
 
-# Activate environment
-echo "[1/3] Activating Python 2.7 environment..."
-conda activate "$ENV_NAME"
-
-# Check Python version
-PYTHON_VERSION=$(python --version 2>&1)
-echo "      Python: $PYTHON_VERSION"
-
-# Install missing dependencies if needed
-if ! python -c "import serial" 2>/dev/null; then
-    echo "      Installing pyserial..."
-    pip install -q pyserial==2.7
+    # Install missing dependencies if needed
+    if ! python -c "import serial" 2>/dev/null; then
+        echo "      Installing pyserial..."
+        pip install -q pyserial==2.7
+    fi
 fi
 
 # Run the print script
@@ -153,7 +197,11 @@ echo ""
 python "$SCRIPT_DIR/print.py" "$GCODE_FILE"
 
 # Deactivate environment
-conda deactivate
+if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
+    deactivate
+else
+    conda deactivate
+fi
 
 echo ""
 echo "Done!"
