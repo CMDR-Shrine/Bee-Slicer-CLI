@@ -1,19 +1,31 @@
-# BEETHEFIRST Standalone Printer
+# BEETHEFIRST Standalone Printer CLI
 
-Standalone Python script to print G-code files on BEETHEFIRST/BEETHEFIRST+ printers directly from PrusaSlicer.
+Standalone CLI tool to print G-code files and manage filament on BEETHEFIRST/BEETHEFIRST+ printers.
 
-**No Docker required** - uses Miniconda Python 2.7 environment.
+**No Docker required** - uses Python 2.7 (Miniconda on x86_64, virtualenv on ARM64/Raspberry Pi).
 
 ## Quick Start
 
+**Interactive Menu:**
+```bash
+./print.sh
+```
+
+**Direct Print:**
 ```bash
 ./print.sh /path/to/your/print.gcode
 ```
 
+## Features
+
+1. **Print from G-code file** - Transfer and print directly to SD card
+2. **Load filament** - Heat nozzle to 215°C and extrude 50mm
+3. **Unload filament** - Heat nozzle to 215°C and retract 50mm
+
 The first run will automatically:
-1. Download and install Miniconda2 (if not already installed)
-2. Create a Python 2.7 environment with required dependencies
-3. Print your G-code file
+1. Set up Python 2.7 environment with required dependencies
+2. Connect to your printer
+3. Run the selected operation
 
 Subsequent runs are instant!
 
@@ -41,7 +53,7 @@ sudo usermod -a -G dialout $USER
 Install udev rules:
 
 ```bash
-sudo cp 99-beeverycreative.rules /etc/udev/rules.d/
+sudo cp config/99-beeverycreative.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```
@@ -52,24 +64,33 @@ Verify printer is detected:
 lsusb | grep BEEVERYCREATIVE
 ```
 
+## Project Structure
+
+```
+Bee-Slicer-CLI/
+├── print.sh              # Main CLI wrapper (run this!)
+├── config/               # Configuration files
+│   └── 99-beeverycreative.rules  # udev rules for USB permissions
+├── src/                  # Python source code
+│   ├── print.py          # Print G-code files
+│   ├── load.py           # Load filament utility
+│   ├── unload.py         # Unload filament utility
+│   └── beedriver/        # USB printer driver library
+├── API.md                # beedriver API documentation
+└── README.md             # This file
+```
+
 ## How It Works
 
-1. **Connects** to your BEETHEFIRST printer via USB
-2. **Reads** the target temperature from your G-code (M104/M109 commands)
-3. **Transfers** the G-code file to printer's internal SD card
-4. **Heats** the nozzle to target temperature
-5. **Starts** the print using M23/M24 commands (standard Marlin)
-6. **Monitors** print progress and temperature
+**Print workflow:**
+1. Connects to BEETHEFIRST printer via USB
+2. Reads target temperature from G-code (M104/M109 commands)
+3. Transfers file to SD card as "ABCDE" (prevents file accumulation)
+4. Heats nozzle to target temperature
+5. Starts print using M23 + M33 commands (BEETHEFIRST-specific)
+6. Monitors print status with M32 command
 
-## Features
-
-✅ **No Docker** - runs natively with Miniconda
-✅ **Auto-setup** - first run installs everything automatically
-✅ **PrusaSlicer compatible** - works with standard G-code output
-✅ **M23/M24 print commands** - uses standard Marlin SD card commands
-✅ **Smart heating** - extracts temperature from your G-code
-✅ **Progress monitoring** - shows real-time temperature and status
-✅ **Safe file naming** - automatically creates SD-card compatible names (lowercase!)
+**Note:** Uses fixed filename "ABCDE" (like official BeeSlicer) to prevent SD card file accumulation.
 
 ## Usage Examples
 
@@ -86,60 +107,49 @@ lsusb | grep BEEVERYCREATIVE
 
 ## Technical Details
 
-### What's Included
+### Platform Support
 
-- `print.sh` - Shell wrapper that manages the Python environment
-- `print.py` - Main print script
-- `beedriver/` - USB printer communication library (extracted from BEEweb)
+- **x86_64**: Uses Miniconda Python 2.7
+- **ARM64/aarch64 (Raspberry Pi)**: Uses system Python 2.7 + virtualenv
 
 ### Dependencies
 
 Automatically installed by `print.sh`:
-- Python 2.7 (via Miniconda2)
+- Python 2.7
 - pyusb==1.0.2
 - pyserial==2.7
 
 ### Print Process
 
 ```
-1. Connect to printer
+1. Connect to printer via USB
 2. Switch to firmware mode (if needed)
 3. Analyze G-code file (read temperature, count lines)
-4. Transfer file to SD card
+4. Transfer file to SD card as "ABCDE"
 5. Heat nozzle (M104 command)
 6. Initialize SD card (M21)
-7. Select file with M23 <lowercase_filename>
-8. Start print with M24
-9. Monitor temperature and print status
+7. Select file with M23 abcde (lowercase!)
+8. Start print with M33 (BEETHEFIRST custom command)
+9. Monitor print status with M32
 ```
 
-### Critical: Lowercase Filenames
+### BEETHEFIRST-Specific Commands
 
-**The BEETHEFIRST firmware converts filenames to lowercase when using M23!**
+**M33 vs M24:** BEETHEFIRST firmware does NOT implement M24 (standard Marlin). Instead it uses:
 
-Files on SD card are stored as **UPPERCASE** (e.g., `MYPRINT`), but you **MUST** send **lowercase** to M23:
-
-```gcode
-M23 myprint    # Correct! (lowercase)
-M23 MYPRINT    # Wrong! (will get "error opening file")
-```
-
-The script handles this automatically.
-
-### M23/M24 Commands
-
-The BEETHEFIRST firmware uses standard Marlin SD card commands:
-
+- **M21** - Initialize SD card
 - **M23 <filename>** - Select SD file (must be lowercase!)
-- **M24** - Start/Resume SD print
+- **M33** - Start SD print (BEETHEFIRST custom - replaces M24)
+- **M32** - Query print session variables (progress monitoring)
 
-Example:
+Example workflow:
 ```gcode
-M23 myprint    ; Select file (lowercase!)
-M24            ; Start printing
+M21           ; Initialize SD
+M23 abcde     ; Select file (lowercase!)
+M33           ; Start print (BEETHEFIRST custom command)
 ```
 
-**Note:** M33 is NOT a print command! M33 is "Get Long Filename" and only retrieves filename information.
+**Important:** In standard Marlin, M33 means "Get Long Filename", but BEETHEFIRST repurposed it to start SD prints.
 
 ## Troubleshooting
 
@@ -167,9 +177,9 @@ docker stop beeweb-server
 1. Make sure your G-code has M104/M109 heating commands
 2. Check that the file transferred successfully (100% in output)
 3. Wait for the heating phase to complete
-4. Verify M23 command was sent with lowercase filename (shown in output)
-5. Check for "error opening file" - this means filename case mismatch
-6. Ensure M24 command was sent after M23 succeeds
+4. Verify M23 returned "File opened: ABCDE" message
+5. Check M33 response - should return "ok" without errors
+6. Monitor M32 output - should show print session variables (A, B, C, D values)
 
 ### "Command not found: conda"
 

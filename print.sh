@@ -29,9 +29,10 @@ if [ -z "$1" ]; then
     echo "  1) Print from G-code file"
     echo "  2) Load filament (heat + extrude)"
     echo "  3) Unload filament (heat + retract)"
-    echo "  4) Exit"
+    echo "  4) Monitor print progress (passive)"
+    echo "  5) Exit"
     echo ""
-    read -p "Choice [1-4]: " CHOICE
+    read -p "Choice [1-5]: " CHOICE
     echo ""
 
     case $CHOICE in
@@ -53,7 +54,10 @@ if [ -z "$1" ]; then
         3)
             MODE="unload"
             ;;
-        4|q|Q)
+        4)
+            MODE="monitor"
+            ;;
+        5|q|Q)
             echo "Goodbye!"
             exit 0
             ;;
@@ -81,14 +85,21 @@ elif [ "$MODE" = "load" ]; then
     echo "FILAMENT LOADER"
 elif [ "$MODE" = "unload" ]; then
     echo "FILAMENT UNLOADER"
+elif [ "$MODE" = "monitor" ]; then
+    echo "PRINT MONITOR"
 fi
 echo "Architecture: $ARCH"
 echo "============================================================"
 echo ""
 
-# Check for processes using the printer
-echo "[0/2] Checking for conflicting processes..."
-CONFLICTING_PROCS=$(ps aux | grep -E "(beeweb|beesoft|simple_print|gcode_sender)" | grep -v grep | grep -v "$$" || true)
+# Check for processes using the printer (skip for monitor mode)
+if [ "$MODE" != "monitor" ]; then
+    echo "[0/2] Checking for conflicting processes..."
+    CONFLICTING_PROCS=$(ps aux | grep -E "(beeweb|beesoft|simple_print|gcode_sender)" | grep -v grep | grep -v "$$" || true)
+else
+    # Monitor mode is passive and doesn't need to check
+    CONFLICTING_PROCS=""
+fi
 
 if [ -n "$CONFLICTING_PROCS" ]; then
     echo ""
@@ -132,13 +143,17 @@ if [ -n "$CONFLICTING_PROCS" ]; then
         echo "Aborted. Please manually stop processes using the printer."
         exit 1
     fi
-else
+elif [ "$MODE" != "monitor" ]; then
     echo "      No conflicting processes found."
 fi
 
 # ARM64 (Raspberry Pi) - use system Python 2.7 with virtualenv
 if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
-    echo "[1/3] Using system Python 2.7 (ARM64 platform)..."
+    if [ "$MODE" = "monitor" ]; then
+        echo "[1/2] Using system Python 2.7 (ARM64 platform)..."
+    else
+        echo "[1/3] Using system Python 2.7 (ARM64 platform)..."
+    fi
 
     # Check if Python 2.7 is installed
     if ! command -v python2.7 &> /dev/null; then
@@ -220,7 +235,11 @@ else
     fi
 
     # Activate environment
-    echo "[1/3] Activating Python 2.7 environment..."
+    if [ "$MODE" = "monitor" ]; then
+        echo "[1/2] Activating Python 2.7 environment..."
+    else
+        echo "[1/3] Activating Python 2.7 environment..."
+    fi
     conda activate "$ENV_NAME"
 
     # Check Python version
@@ -235,7 +254,11 @@ else
 fi
 
 # Run the appropriate script based on mode
-echo "[2/3] Running $MODE script..."
+if [ "$MODE" = "monitor" ]; then
+    echo "[2/2] Running $MODE script..."
+else
+    echo "[2/3] Running $MODE script..."
+fi
 echo ""
 
 case $MODE in
@@ -247,6 +270,9 @@ case $MODE in
         ;;
     unload)
         python "$SCRIPT_DIR/src/unload.py"
+        ;;
+    monitor)
+        python "$SCRIPT_DIR/src/monitor.py"
         ;;
 esac
 

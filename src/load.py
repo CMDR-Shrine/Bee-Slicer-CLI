@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Filament Loader for BEETHEFIRST
-Heats nozzle, extrudes filament, then cools down
+Uses M701 firmware command for automatic filament loading
 """
 
 import sys
@@ -20,7 +20,7 @@ print("="*60)
 print("")
 
 # Connect to printer
-print("[1/4] Connecting to printer...")
+print("[1/3] Connecting to printer...")
 try:
     c = conn.Conn()
     c.connectToFirstPrinter()
@@ -33,63 +33,56 @@ except Exception as e:
 
 # Check if we need to reconnect after Bootloader -> Firmware switch
 time.sleep(2)
-if hasattr(c, 'reconnect'):
-    print("      Reconnecting after mode switch...")
+mode = cmd.getPrinterMode()
+if mode == "Bootloader":
+    print("      Switching to firmware mode...")
+    cmd.goToFirmware()
     time.sleep(5)
     c.reconnect()
     cmd = c.getCommandIntf()
+    print("      Reconnected!")
 
-# Set temperature to 215C
+# Set temperature to 215C and wait
 target_temp = 215
-print("\n[2/4] Heating nozzle to {}C...".format(target_temp))
-cmd.sendCmd('M104 S{}\n'.format(target_temp))
+print("\n[2/3] Heating nozzle to {}C...".format(target_temp))
+print("      (This uses M703 - blocks until target reached)")
 
-max_wait = 300  # 5 minutes
-start_time = time.time()
-last_reported_temp = -999
+# Use official startHeating method (M703)
+cmd.startHeating(target_temp)
 
-while time.time() - start_time < max_wait:
-    current_temp = cmd.getNozzleTemperature()
+current_temp = cmd.getNozzleTemperature()
+if current_temp is not None:
+    print("      Target temperature reached: {:.1f}C!".format(current_temp))
+else:
+    print("      Temperature check unavailable, but heating complete")
 
-    if current_temp is not None:
-        # Report temperature every 5 degrees change
-        if abs(current_temp - last_reported_temp) >= 5:
-            print("      Current: {:.1f}C / Target: {}C".format(current_temp, target_temp))
-            last_reported_temp = current_temp
-
-        # Check if target reached
-        if current_temp >= target_temp - 2:  # Within 2 degrees
-            print("      Target temperature reached: {:.1f}C!".format(current_temp))
-            break
-
-    time.sleep(2)
-
-# Extrude 50mm of filament
-print("\n[3/4] Extruding filament...")
-print("      Press Ctrl+C to stop")
+# Load filament using M701 firmware command
+print("\n[3/3] Loading filament...")
+print("      Using M701 firmware command (automatic load sequence)")
+print("      The printer will now load filament automatically.")
+print("      Watch the printer - this may take 30-60 seconds.")
 print("")
 
-try:
-    extrude_amount = 5  # mm per command
-    extrude_speed = 100  # mm/min
+cmd.load()
 
-    for i in range(10):  # 10 x 5mm = 50mm total
-        print("      Extruding... {}/50mm".format((i+1) * extrude_amount))
-        cmd.sendCmd('G91\n')  # Relative positioning
-        cmd.sendCmd('G1 E{} F{}\n'.format(extrude_amount, extrude_speed))
-        cmd.sendCmd('G90\n')  # Absolute positioning
-        time.sleep(1)
+print("      M701 command sent!")
+print("")
+print("      The printer is performing the load sequence:")
+print("      1. Initial slow extrusion")
+print("      2. Fast main load")
+print("      3. Purge extrusion")
+print("")
+print("      Wait for the printer to finish...")
 
-    print("      Extrusion complete!")
-
-except KeyboardInterrupt:
-    print("\n      Extrusion stopped by user")
-
-# Cool down
-print("\n[4/4] Cooling down...")
-cmd.sendCmd('M104 S0\n')  # Turn off heater
-print("      Heater turned off")
+# Wait a bit for the operation to start
+time.sleep(3)
 
 print("\n" + "="*60)
-print("FILAMENT LOAD COMPLETE")
+print("FILAMENT LOAD COMMAND SENT")
 print("="*60)
+print("")
+print("The printer should now be loading filament.")
+print("Check the printer display and watch for filament movement.")
+print("")
+print("Note: The heater will remain on. Use the printer menu to cool down,")
+print("      or run the unload utility which will cool down at the end.")
