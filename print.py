@@ -51,8 +51,8 @@ print("")
 
 # Step 1: Connect to printer
 print("[1/7] Connecting to printer...")
-c = conn.getBeeConnection()
-if not c.connect():
+c = conn.Conn()
+if not c.connectToFirstPrinter():
     print("ERROR: Failed to connect to printer!")
     sys.exit(1)
 
