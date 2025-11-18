@@ -79,7 +79,26 @@ print("      Mode: {}".format(mode))
 if mode != 'Firmware':
     print("      Going to firmware mode...")
     cmd.goToFirmware()
-    time.sleep(2)
+
+    # Wait for device to reset and re-enumerate
+    print("      Waiting for device to reset...")
+    time.sleep(5)
+
+    # Reconnect to the printer
+    print("      Reconnecting...")
+    if not c.reconnect():
+        print("ERROR: Failed to reconnect after firmware switch!")
+        sys.exit(1)
+
+    # Get new command interface
+    cmd = c.getCommandIntf()
+    if cmd is None:
+        print("ERROR: Failed to get command interface after reconnect!")
+        sys.exit(1)
+
+    print("      Reconnected successfully!")
+    mode = cmd.getPrinterMode()
+    print("      New mode: {}".format(mode))
 
 # Clear any shutdown flag from previous print
 status = cmd.getStatus()
