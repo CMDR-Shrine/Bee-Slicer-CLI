@@ -57,6 +57,18 @@ if not c.connectToFirstPrinter():
     sys.exit(1)
 
 cmd = c.getCommandIntf()
+if cmd is None:
+    print("ERROR: Failed to get command interface!")
+    print("This usually means USB permission issues.")
+    print("")
+    print("Fix with:")
+    print("  sudo usermod -a -G dialout $USER")
+    print("  (then log out and back in)")
+    print("")
+    print("Or run with sudo:")
+    print("  sudo ./print.sh gcode/case.gcode")
+    sys.exit(1)
+
 print("      Connected!")
 
 # Step 2: Check firmware mode
