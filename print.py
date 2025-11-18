@@ -227,6 +227,13 @@ if 'error' in response.lower():
     print("      ERROR: M23 failed to select file!")
     sys.exit(1)
 
+# Home all axes before printing (required by BEETHEFIRST firmware)
+print("      Sending G28 (Home all axes)...")
+response = cmd.sendCmd('G28\n')
+print("      G28: {}".format(response.strip() if response else 'No response'))
+print("      Waiting for homing to complete...")
+time.sleep(10)  # Give it time to home all axes
+
 # BEETHEFIRST firmware doesn't implement M24 (standard SD print start)
 # Instead it uses M33 as a custom command to start SD printing
 time.sleep(1)
