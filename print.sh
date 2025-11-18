@@ -240,13 +240,13 @@ echo ""
 
 case $MODE in
     print)
-        python "$SCRIPT_DIR/print.py" "$GCODE_FILE"
+        python "$SCRIPT_DIR/src/print.py" "$GCODE_FILE"
         ;;
     load)
-        python "$SCRIPT_DIR/load.py"
+        python "$SCRIPT_DIR/src/load.py"
         ;;
     unload)
-        python "$SCRIPT_DIR/unload.py"
+        python "$SCRIPT_DIR/src/unload.py"
         ;;
 esac
 

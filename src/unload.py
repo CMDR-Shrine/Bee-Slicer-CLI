@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Filament Loader for BEETHEFIRST
-Heats nozzle, extrudes filament, then cools down
+Filament Unloader for BEETHEFIRST
+Heats nozzle, retracts filament, then cools down
 """
 
 import sys
@@ -12,11 +12,10 @@ import time
 # Add beedriver to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'beedriver'))
 
-from beedriver import connection as conn
-from beedriver import command as comm
+import beedriver.connection as conn
 
 print("="*60)
-print("FILAMENT LOADER")
+print("FILAMENT UNLOADER")
 print("="*60)
 print("")
 
@@ -25,7 +24,7 @@ print("[1/4] Connecting to printer...")
 try:
     c = conn.Conn()
     c.connectToFirstPrinter()
-    cmd = comm.Command(c)
+    cmd = c.getCommandIntf()
     print("      Connected!")
 except Exception as e:
     print("      ERROR: Failed to connect to printer")
@@ -38,7 +37,7 @@ if hasattr(c, 'reconnect'):
     print("      Reconnecting after mode switch...")
     time.sleep(5)
     c.reconnect()
-    cmd = comm.Command(c)
+    cmd = c.getCommandIntf()
 
 # Set temperature to 215C
 target_temp = 215
@@ -65,26 +64,26 @@ while time.time() - start_time < max_wait:
 
     time.sleep(2)
 
-# Extrude 50mm of filament
-print("\n[3/4] Extruding filament...")
+# Retract 50mm of filament
+print("\n[3/4] Retracting filament...")
 print("      Press Ctrl+C to stop")
 print("")
 
 try:
-    extrude_amount = 5  # mm per command
-    extrude_speed = 100  # mm/min
+    retract_amount = 5  # mm per command
+    retract_speed = 100  # mm/min
 
     for i in range(10):  # 10 x 5mm = 50mm total
-        print("      Extruding... {}/50mm".format((i+1) * extrude_amount))
+        print("      Retracting... {}/50mm".format((i+1) * retract_amount))
         cmd.sendCmd('G91\n')  # Relative positioning
-        cmd.sendCmd('G1 E{} F{}\n'.format(extrude_amount, extrude_speed))
+        cmd.sendCmd('G1 E-{} F{}\n'.format(retract_amount, retract_speed))
         cmd.sendCmd('G90\n')  # Absolute positioning
         time.sleep(1)
 
-    print("      Extrusion complete!")
+    print("      Retraction complete!")
 
 except KeyboardInterrupt:
-    print("\n      Extrusion stopped by user")
+    print("\n      Retraction stopped by user")
 
 # Cool down
 print("\n[4/4] Cooling down...")
@@ -92,5 +91,5 @@ cmd.sendCmd('M104 S0\n')  # Turn off heater
 print("      Heater turned off")
 
 print("\n" + "="*60)
-print("FILAMENT LOAD COMPLETE")
+print("FILAMENT UNLOAD COMPLETE")
 print("="*60)
