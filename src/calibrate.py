@@ -73,11 +73,20 @@ def main():
         if cmd is None:
             print("ERROR: Lost connection after firmware switch!")
             sys.exit(1)
+            
+    # Step 2.5: Home Printer (Safety)
+    print("\n[2.5/5] Homing Printer (G28)...")
+    print("        This ensures the bed is in a known position.")
+    cmd.home() # This blocks until homing is complete
+    print("        Homing Complete.")
     
     # Step 3: Start Calibration (Point A)
     print("\n[3/5] Moving to Point A (Z-Offset Adjustment)...")
     print("      Sending G131 S0...")
     cmd.sendCmd("G131 S0\n")
+    
+    print("      Setting Relative Positioning (G91)...")
+    cmd.sendCmd("G91\n")
     
     print("\nAdjust the Nozzle Height using the keyboard:")
     print("  'u' : Up 0.05mm")
@@ -88,10 +97,11 @@ def main():
     print("  'q' : Quit")
     
     while True:
-        sys.stdout.write("\nCommand [u/U/d/D/n/q]: ")
+        sys.stdout.write("\rCommand [u/U/d/D/n/q]: ")
         sys.stdout.flush()
         key = get_keypress()
-        print(key) 
+        # Clear line
+        sys.stdout.write("\r" + " "*30 + "\r") 
         
         if key == 'u':
             print("Moving Z Up 0.05mm")
@@ -109,11 +119,13 @@ def main():
             break
         elif key == 'q':
             print("Aborting...")
-            cmd.sendCmd("G28\n")
+            cmd.sendCmd("G90\n")
+            cmd.home()
             sys.exit(0)
             
     # Step 4: Point B (Screw 1)
     print("\n[4/5] Moving to Point B (Left Screw)...")
+    cmd.sendCmd("G90\n") # Switch back to absolute before moving
     cmd.sendCmd("G132\n")
     print("      Adjust the LEFT screw until the nozzle just touches the bed.")
     print("      (Use a piece of paper as a gauge)")
@@ -141,7 +153,7 @@ def main():
             run_test_print(cmd)
             break
         elif choice == 'n' or choice == '':
-            cmd.sendCmd("G28\n")
+            cmd.home()
             break
 
     print("\nDone!")
