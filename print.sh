@@ -30,9 +30,10 @@ if [ -z "$1" ]; then
     echo "  2) Load filament (heat + extrude)"
     echo "  3) Unload filament (heat + retract)"
     echo "  4) Monitor print progress (passive)"
-    echo "  5) Exit"
+    echo "  5) Calibrate Printer (Bed Leveling)"
+    echo "  6) Exit"
     echo ""
-    read -p "Choice [1-5]: " CHOICE
+    read -p "Choice [1-6]: " CHOICE
     echo ""
 
     case $CHOICE in
@@ -57,7 +58,10 @@ if [ -z "$1" ]; then
         4)
             MODE="monitor"
             ;;
-        5|q|Q)
+        5)
+            MODE="calibrate"
+            ;;
+        6|q|Q)
             echo "Goodbye!"
             exit 0
             ;;
@@ -67,13 +71,17 @@ if [ -z "$1" ]; then
             ;;
     esac
 else
-    # Direct usage: ./print.sh <gcode_file>
-    GCODE_FILE="$1"
-    if [ ! -f "$GCODE_FILE" ]; then
-        echo "ERROR: File not found: $GCODE_FILE"
-        exit 1
+    # Direct usage: ./print.sh <gcode_file> or ./print.sh calibrate
+    if [ "$1" = "calibrate" ]; then
+        MODE="calibrate"
+    else
+        GCODE_FILE="$1"
+        if [ ! -f "$GCODE_FILE" ]; then
+            echo "ERROR: File not found: $GCODE_FILE"
+            exit 1
+        fi
+        MODE="print"
     fi
-    MODE="print"
 fi
 
 echo "============================================================"
@@ -87,6 +95,8 @@ elif [ "$MODE" = "unload" ]; then
     echo "FILAMENT UNLOADER"
 elif [ "$MODE" = "monitor" ]; then
     echo "PRINT MONITOR"
+elif [ "$MODE" = "calibrate" ]; then
+    echo "PRINTER CALIBRATION"
 fi
 echo "Architecture: $ARCH"
 echo "============================================================"
@@ -273,6 +283,9 @@ case $MODE in
         ;;
     monitor)
         python "$SCRIPT_DIR/src/monitor.py"
+        ;;
+    calibrate)
+        python "$SCRIPT_DIR/src/calibrate.py"
         ;;
 esac
 

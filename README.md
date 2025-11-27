@@ -16,11 +16,17 @@ Standalone CLI tool to print G-code files and manage filament on BEETHEFIRST/BEE
 ./print.sh /path/to/your/print.gcode
 ```
 
+**Calibration (Bed Leveling):**
+```bash
+./print.sh calibrate
+```
+
 ## Features
 
 1. **Print from G-code file** - Transfer and print directly to SD card
 2. **Load filament** - Heat nozzle to 215°C and extrude 50mm
 3. **Unload filament** - Heat nozzle to 215°C and retract 50mm
+4. **Calibrate Printer** - Interactive wizard for bed leveling (Z-offset and screws)
 
 The first run will automatically:
 1. Set up Python 2.7 environment with required dependencies
