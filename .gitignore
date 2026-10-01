@@ -3,9 +3,6 @@
 *.pyo
 __pycache__/
 
-# Virtual environments
-.venv_py27/
-
 # IDE
 .vscode/
 .idea/
@@ -13,3 +10,7 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Python 3 runtime and rollback archives
+.venv/
+backups/

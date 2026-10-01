@@ -1,215 +1,106 @@
-# BEETHEFIRST Standalone Printer CLI
+# BEETHEFIRST / BEETHEFIRST+ CLI
 
-Standalone CLI tool to print G-code files and manage filament on BEETHEFIRST/BEETHEFIRST+ printers.
+Python 3 tools for slicing with PrusaSlicer, transferring G-code through BEE USB, printing, material handling, monitoring and firmware-guided bed calibration.
 
-**No Docker required** - uses Python 2.7 (Miniconda on x86_64, virtualenv on ARM64/Raspberry Pi).
+The current implementation uses the BEE protocol documented by the manufacturer's SDK and firmware. The old Python 2 SDK and its API documentation are archived in `backups/legacy-python2-20261001.tar.gz`. No Miniconda, Python 2, Docker or pyserial is needed.
 
-## Quick Start
+## Setup
 
-**Interactive Menu:**
 ```bash
-./print.sh
+cd /home/zac/Documents/Projects/VIBE/VIBE-Bee-Slicer-CLI
+uv sync
+./print.sh --help
 ```
 
-**Direct Print:**
+The project environment needs only PyUSB (installed by `uv sync`) and the system libusb library. Python 3.10 or later is required. The environment has been installed on this machine. Offline inspection, slicing and dry runs never open USB.
+
+USB access still needs the existing udev/group permissions. On Arch, use the `uucp` group rather than Ubuntu's `dialout`. Check the existing `config/99-beeverycreative.rules` before installing rules for your distribution. Permission errors are reported; the CLI does not use sudo, kill other processes, reset USB, or stop Docker automatically. Close BEEsoft/BEEweb while using these tools. A local lock prevents simultaneous hardware operations from this CLI; it cannot coordinate with unrelated applications.
+
+On this Arch machine, install the rule and enable access with:
+
 ```bash
-./print.sh /path/to/your/print.gcode
+sudo usermod -aG uucp zac
+sudo install -m 644 config/99-beeverycreative.rules /etc/udev/rules.d/99-beeverycreative.rules
+sudo udevadm control --reload-rules
 ```
 
-**Calibration (Bed Leveling):**
+Reconnect USB and log out/in, or run `newgrp uucp` to activate membership in a new shell. Run the CLI as your regular user.
+
+## Commands
+
+Run `./print.sh` for a menu or use these commands directly:
+
+| Command | Purpose |
+| --- | --- |
+| `./print.sh inspect part.gcode` | Offline command and temperature report |
+| `./print.sh print part.gcode --dry-run` | Validate and report the prepared job without USB |
+| `./print.sh slice part.stl --material polylite-pla --quality -o part.gcode` | Slice with the installed BEE PrusaSlicer profiles |
+| `./print.sh print part.gcode` | Transfer, heat, start autonomous SD printing and confirm its state |
+| `./print.sh part.gcode` | Compatibility shorthand for print |
+| `./print.sh calibrate` | Interactive firmware-guided bed leveling |
+| `./print.sh load --material petg` | Material-aware load; cool after completion |
+| `./print.sh unload --material polylite-pla` | Material-aware unload; cool after completion |
+| `./print.sh status` | One status/temperature/progress snapshot |
+| `./print.sh monitor` | Poll every five seconds; Ctrl+C closes monitoring |
+| `./print.sh monitor --once` | Single monitor snapshot |
+| `./print.sh pause` / `resume` / `cancel` | Explicit print controls with state checks |
+| `./print.sh firmware` | Start the already installed firmware if in bootloader; does not flash |
+
+Hardware commands accept `--serial SERIAL` when multiple printers are attached. `monitor` supports `--interval SECONDS`. Print supports `--transfer-timeout` and `--heat-timeout`, both defaulting to 300 seconds.
+
+Materials are `pla`, `polylite-pla` and `petg`. Load/unload defaults to PolyLite PLA at 215 C; generic PLA starts at 210 C and Polymaker PETG at 240 C. You can specify `--temperature 240` explicitly. PETG slicing selects the experimental unheated-bed preset. The print command normally preserves the temperatures in the sliced file; `--temperature` deliberately replaces every positive nozzle target in the prepared copy. CLI temperatures are limited to 150–250 C. Check the actual hotend and material before using PETG; firmware software limits are not hardware ratings.
+
+## Calibration
+
+Use a clean nozzle below 50 C and the usual paper gauge. The new wizard uses line input followed by ENTER, so it works over SSH and ordinary terminals.
+
 ```bash
 ./print.sh calibrate
 ```
 
-## Features
+1. Firmware `G131 Z2` homes and moves to point A with a 2 mm initial gap. `--start-z` accepts 0.5–5 mm.
+2. Enter `u` to move the bed closer by 0.05 mm, or `d` to move it away by 0.05 mm. Uppercase `U/D` uses 0.5 mm steps. Every move uses absolute positioning at a controlled speed and waits for completion. The software adjustment range is -1 to 5 mm; watch the paper/nozzle while adjusting.
+3. Enter `n` when the gauge feels correct. The first `G132` **saves the height to printer configuration** and moves to point B. Adjust the left screw and press ENTER.
+4. Firmware advances to point C. Adjust the right screw and press ENTER to finish and home. Final `G28` explicitly clears calibration mode.
+5. Enter `q` or Ctrl+C to exit calibration and home. If you already advanced from point A, its saved height remains; cancellation does not undo a hardware setting already saved.
 
-1. **Print from G-code file** - Transfer and print directly to SD card
-2. **Load filament** - Heat nozzle to 215°C and extrude 50mm
-3. **Unload filament** - Heat nozzle to 215°C and retract 50mm
-4. **Calibrate Printer** - Interactive wizard for bed leveling (Z-offset and screws)
-
-The first run will automatically:
-1. Set up Python 2.7 environment with required dependencies
-2. Connect to your printer
-3. Run the selected operation
-
-Subsequent runs are instant!
-
-## Requirements
-
-- BEETHEFIRST or BEETHEFIRST+ printer connected via USB
-- Linux (tested on Arch Linux)
-- USB permissions configured (see below)
-- Internet connection (first run only, to download Miniconda)
-
-## USB Permissions Setup
-
-Your user must be in the `uucp` group (Arch) or `dialout` group (Ubuntu/Debian):
+The old blind writes and leaking relative mode were removed. Both normal and canceled sequences clean up the connection. You can check your existing first-layer pattern afterward:
 
 ```bash
-# Arch Linux
-sudo usermod -a -G uucp $USER
-
-# Ubuntu/Debian
-sudo usermod -a -G dialout $USER
-
-# Log out and back in for changes to take effect
+./print.sh gcode/calibration.gcode --temperature 215 --dry-run
+./print.sh gcode/calibration.gcode --temperature 215
 ```
 
-Install udev rules:
+The existing test pattern and your old calibration changes were preserved in the rollback archive. The CLI does not automatically print a calibration pattern after leveling.
+
+## Printing and monitoring behavior
+
+Jobs are fully validated before SD is touched. File transfer is synchronous: firmware acknowledges each byte range and 512-byte message. Missing acknowledgements, creation errors, partial USB writes and timeouts stop the workflow before print start. No failed block is blindly replayed.
+
+USB reads send BEECom's empty OUT packet before reading IN. Transfer frames retain BEECom's 1 ms pause and permit up to 20 seconds for acknowledgement, within the overall transfer deadline. Transfer errors identify the byte range that failed; these compatibility changes still need hardware verification. After a stalled transfer, the firmware may remain in binary receive mode. If the failed attempt stopped before heating or printing and the printer is idle, power-cycle it before retrying.
+
+The prepared copy uses plain ASCII G-code, fresh `M31` time/command metadata, absolute positioning, a nozzle wait and homing. Input files are never edited. Redundant unsupported `G21/M82`, old `M31/M1033`, heater-off bed commands, and copied persistent PID writes (`M130`) are removed and reported. Active bed heating, relative extrusion, inch mode, binary G-code and commands missing from the inspected firmware dispatcher are rejected. Firmware `M642` extrusion coefficients and other supported file settings are retained; tune slicer flow with those in mind.
+
+The preheat target is the last positive nozzle setting before the first positive extrusion move, rather than the last temperature anywhere in the job. This handles ordinary staged startup and different later-layer temperatures. Files without a suitable target require an explicit temperature. This is a static interpretation, not a full G-code simulation.
+
+The internal SD destination remains `ABCDE`, preserving the working convention. Selection uses lowercase `abcde`; autonomous printing uses `M33`. A confirmed printing state is required before reporting success. Print returns once start is confirmed; the printer then runs autonomously. Closing a monitor does not cancel a print. If a start request was sent but confirmation fails, the CLI reports uncertainty and does not retry automatically.
+
+Monitor/status attach to the active USB configuration without device reset, reconfiguration, mode switching, homing or heating. They do send read queries. Firmware state matching is case-insensitive. Progress counters may represent commands or bytes for jobs started by other hosts, so they are labeled as counters. Bootloader printers must enter firmware before monitoring; mutating actions can start the installed firmware and reconnect explicitly.
+
+Pause/resume wait for confirmed states. **Cancel calls BEE's `M112`, whose handler also homes the printer.** It is a print-cancel action, not a guaranteed motion-free emergency stop.
+
+## Implementation and validation
+
+- `src/bee_protocol.py`: USB attach, bounded responses, block transfer, temperatures, status and calibration controller.
+- `src/bee_cli.py`: argument validation, prepared jobs and workflows.
+- `src/print.py`, `calibrate.py`, `load.py`, `unload.py`, `monitor.py`: compatibility entrypoints for Python 3.
+- [Source investigation](docs/UPSTREAM_RESEARCH.md): protocol evidence and historical issues.
+- `docs/upstream/`: selected manufacturer reference files and snapshot manifest. The manifest supplies the firmware command list used by inspection and print validation.
 
 ```bash
-sudo cp config/99-beeverycreative.rules /etc/udev/rules.d/
-sudo udevadm control --reload-rules
-sudo udevadm trigger
+uv run --no-sync python -m unittest discover -s tests -v
 ```
 
-Verify printer is detected:
+Tests simulate protocol responses, multi-block transfers, startup failures, heater timeouts, calibration save/cancel, USB attachment and material handling. Offline slicing and dry runs passed. **Physical USB operation and calibration still need verification on the actual printer.** No live printer commands were issued during implementation.
 
-```bash
-lsusb | grep BEEVERYCREATIVE
-```
-
-## Project Structure
-
-```
-Bee-Slicer-CLI/
-├── print.sh              # Main CLI wrapper (run this!)
-├── config/               # Configuration files
-│   └── 99-beeverycreative.rules  # udev rules for USB permissions
-├── src/                  # Python source code
-│   ├── print.py          # Print G-code files
-│   ├── load.py           # Load filament utility
-│   ├── unload.py         # Unload filament utility
-│   └── beedriver/        # USB printer driver library
-├── API.md                # beedriver API documentation
-└── README.md             # This file
-```
-
-## How It Works
-
-**Print workflow:**
-1. Connects to BEETHEFIRST printer via USB
-2. Reads target temperature from G-code (M104/M109 commands)
-3. Transfers file to SD card as "ABCDE" (prevents file accumulation)
-4. Heats nozzle to target temperature
-5. Starts print using M23 + M33 commands (BEETHEFIRST-specific)
-6. Monitors print status with M32 command
-
-**Note:** Uses fixed filename "ABCDE" (like official BeeSlicer) to prevent SD card file accumulation.
-
-## Usage Examples
-
-```bash
-# Basic usage
-./print.sh my_print.gcode
-
-# With full path
-./print.sh ~/Documents/3D_Prints/benchy.gcode
-
-# From PrusaSlicer export location
-./print.sh ~/Downloads/calibration_cube.gcode
-```
-
-## Technical Details
-
-### Platform Support
-
-- **x86_64**: Uses Miniconda Python 2.7
-- **ARM64/aarch64 (Raspberry Pi)**: Uses system Python 2.7 + virtualenv
-
-### Dependencies
-
-Automatically installed by `print.sh`:
-- Python 2.7
-- pyusb==1.0.2
-- pyserial==2.7
-
-### Print Process
-
-```
-1. Connect to printer via USB
-2. Switch to firmware mode (if needed)
-3. Analyze G-code file (read temperature, count lines)
-4. Transfer file to SD card as "ABCDE"
-5. Heat nozzle (M104 command)
-6. Initialize SD card (M21)
-7. Select file with M23 abcde (lowercase!)
-8. Start print with M33 (BEETHEFIRST custom command)
-9. Monitor print status with M32
-```
-
-### BEETHEFIRST-Specific Commands
-
-**M33 vs M24:** BEETHEFIRST firmware does NOT implement M24 (standard Marlin). Instead it uses:
-
-- **M21** - Initialize SD card
-- **M23 <filename>** - Select SD file (must be lowercase!)
-- **M33** - Start SD print (BEETHEFIRST custom - replaces M24)
-- **M32** - Query print session variables (progress monitoring)
-
-Example workflow:
-```gcode
-M21           ; Initialize SD
-M23 abcde     ; Select file (lowercase!)
-M33           ; Start print (BEETHEFIRST custom command)
-```
-
-**Important:** In standard Marlin, M33 means "Get Long Filename", but BEETHEFIRST repurposed it to start SD prints.
-
-## Troubleshooting
-
-### "No printer found"
-
-1. Check USB connection: `lsusb | grep BEEVERYCREATIVE`
-2. Check USB permissions: `ls -l /dev/bus/usb/001/*`
-3. Make sure you're in the `uucp` or `dialout` group
-4. Try unplugging and replugging the USB cable
-
-### "Resource busy"
-
-Another program is using the printer:
-
-```bash
-# Check what's using the printer
-sudo lsof /dev/bus/usb/001/* 2>/dev/null
-
-# Stop BEEweb if running
-docker stop beeweb-server
-```
-
-### Print doesn't start
-
-1. Make sure your G-code has M104/M109 heating commands
-2. Check that the file transferred successfully (100% in output)
-3. Wait for the heating phase to complete
-4. Verify M23 returned "File opened: ABCDE" message
-5. Check M33 response - should return "ok" without errors
-6. Monitor M32 output - should show print session variables (A, B, C, D values)
-
-### "Command not found: conda"
-
-The script will automatically install Miniconda2 on first run. If you see this error, delete `~/miniconda2` and try again.
-
-## Comparison with Docker Version
-
-| Feature | Docker | Standalone |
-|---------|--------|-----------|
-| Setup complexity | High | Low (automatic) |
-| First run time | 5-10 min (build) | 2-3 min (download) |
-| Subsequent runs | Instant | Instant |
-| Disk space | ~500MB | ~300MB |
-| Dependencies | Docker | wget |
-| Updates | Rebuild image | Update scripts |
-
-## Future Plans
-
-This standalone version will eventually replace the Docker setup entirely, making this repo Docker-free and much simpler to use!
-
-## Credits
-
-Based on the BEEweb project and beedriver library from Beeverycreative.
-
-## License
-
-See main repository LICENSE file.
+Rollback archive: `backups/before-workflow-fixes-20261001.tar.gz`. It contains the previous shell entrypoint, all five workflow scripts (including your uncommitted calibration edits), and bundled SDK. Do not extract it over current files unless deliberately rolling back.

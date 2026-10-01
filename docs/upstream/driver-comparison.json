@@ -1,0 +1,37 @@
+{
+  "__init__.py": {
+    "identical": true,
+    "local_sha256": "2ac1c032acd0e595ef04a39ac7ae3c3b460d847f187064588155fd86375b4290",
+    "upstream_sha256": "2ac1c032acd0e595ef04a39ac7ae3c3b460d847f187064588155fd86375b4290"
+  },
+  "commands.py": {
+    "identical": true,
+    "local_sha256": "29b709b6433bf46e015a48daca035546f8d16687d9c41f399a2cfbfffeb29a26",
+    "upstream_sha256": "29b709b6433bf46e015a48daca035546f8d16687d9c41f399a2cfbfffeb29a26"
+  },
+  "connection.py": {
+    "identical": false,
+    "local_sha256": "0744a8241d84abb8a02c4acf03ae37a5165d0f7acfd968f721bf573b5e373b43",
+    "upstream_sha256": "8a15a84055cce28ceaa23803bf15d42c6afb63b6f0c448c713ff47f42695d1b0"
+  },
+  "logThread.py": {
+    "identical": true,
+    "local_sha256": "7e62ca3bb535fab6b04b4e6c33782f8183f99922bbaa378f96d1c147625ced9b",
+    "upstream_sha256": "7e62ca3bb535fab6b04b4e6c33782f8183f99922bbaa378f96d1c147625ced9b"
+  },
+  "parsers.py": {
+    "identical": true,
+    "local_sha256": "088e2b7495219452ccb45c99f945f4c64640df7c9e6ad9c2f7d5785962b4f917",
+    "upstream_sha256": "088e2b7495219452ccb45c99f945f4c64640df7c9e6ad9c2f7d5785962b4f917"
+  },
+  "printStatusThread.py": {
+    "identical": true,
+    "local_sha256": "2951932b109043703e3df0da3846c5f4ff0d26e4c51e7108ffa5a3b4fe88dbd6",
+    "upstream_sha256": "2951932b109043703e3df0da3846c5f4ff0d26e4c51e7108ffa5a3b4fe88dbd6"
+  },
+  "transferThread.py": {
+    "identical": true,
+    "local_sha256": "7135c29986494e172097cdc0fb94b493d95fccbb422643eff8ab4cefb206bd8e",
+    "upstream_sha256": "7135c29986494e172097cdc0fb94b493d95fccbb422643eff8ab4cefb206bd8e"
+  }
+}
